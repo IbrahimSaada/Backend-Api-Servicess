@@ -150,8 +150,8 @@ public class RegistrationController : ControllerBase
     // Model for verifying the user
     public class VerifyUserModel
     {
-        public string Email { get; set; }
-        public string VerificationCode { get; set; }
+        public string? Email { get; set; }
+        public string? VerificationCode { get; set; }
     }
 
     private bool IsValidEmail(string email)
