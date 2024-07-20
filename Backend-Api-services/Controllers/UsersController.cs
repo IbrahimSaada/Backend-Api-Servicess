@@ -204,6 +204,55 @@ public class UsersController : ControllerBase
         public string Email { get; set; }
         public string VerificationCode { get; set; }
     }
+    [HttpPost("request-password-reset")]
+    public async Task<IActionResult> RequestPasswordReset([FromBody] PasswordResetModel model)
+    {
+        var user = await _context.users.FirstOrDefaultAsync(u =>
+            u.email == model.EmailOrPhoneNumber || u.phone_number == model.EmailOrPhoneNumber);
+
+        if (user == null)
+        {
+            return NotFound("User not found.");
+        }
+
+        user.verification_code = GenerateVerificationCode();
+        await _context.SaveChangesAsync();
+
+        // Send the verification code to the user's email or phone number
+        // (Implementation of sending the code via email or SMS is not included in this example)
+
+        return Ok("Verification code sent.");
+    }
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] PasswordResetModel model)
+    {
+        var user = await _context.users.FirstOrDefaultAsync(u => u.email == model.EmailOrPhoneNumber);
+
+        if (user == null)
+        {
+            return NotFound("User not found.");
+        }
+
+        if (user.verification_code == model.VerificationCode)
+        {
+            // Reset the password
+            user.password = model.NewPassword;
+            user.verification_code = null; // Clear the verification code after successful reset
+            await _context.SaveChangesAsync();
+            return Ok("Password has been reset.");
+        }
+        else
+        {
+            return BadRequest("Invalid verification code.");
+        }
+    }
+
+    public class PasswordResetModel
+    {
+        public string EmailOrPhoneNumber { get; set; }
+        public string VerificationCode { get; set; }
+        public string NewPassword { get; set; }
+    }
 
     private bool UserExists(int id)
     {

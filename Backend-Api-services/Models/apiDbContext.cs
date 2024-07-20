@@ -1,13 +1,36 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Backend_Api_services.Models
 {
     public class apiDbContext : DbContext
     {
-        public apiDbContext(DbContextOptions<apiDbContext> options) : base(options) 
-        {
+        private readonly ILogger<apiDbContext> _logger;
 
+        public apiDbContext(DbContextOptions<apiDbContext> options, ILogger<apiDbContext> logger) : base(options)
+        {
+            _logger = logger;
+            _logger.LogInformation("apiDbContext initialized");
         }
-        public DbSet<Users> users {  get; set; }
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            base.OnConfiguring(optionsBuilder);
+
+            if (!optionsBuilder.IsConfigured)
+            {
+                var connectionString = "Your Connection String";
+                optionsBuilder.UseNpgsql(connectionString);
+                _logger.LogInformation("OnConfiguring called, connection string: {connectionString}", connectionString);
+            }
+        }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            _logger.LogInformation("OnModelCreating called");
+        }
+
+        public DbSet<Users> users { get; set; }
     }
 }
