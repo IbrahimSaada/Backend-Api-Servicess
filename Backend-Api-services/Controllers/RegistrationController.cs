@@ -6,30 +6,25 @@ using System;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using System.Collections.Generic;
 
 [Route("api/[controller]")]
 [ApiController]
-public class UsersController : ControllerBase
+public class RegistrationController : ControllerBase
 {
     private readonly apiDbContext _context;
-    private readonly ILogger<UsersController> _logger;
+    private readonly ILogger<RegistrationController> _logger;
 
-    public UsersController(apiDbContext context, ILogger<UsersController> logger)
+    public RegistrationController(apiDbContext context, ILogger<RegistrationController> logger)
     {
         _context = context;
         _logger = logger;
     }
-
-    // GET: api/Users
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Users>>> GetUsers()
     {
         return await _context.users.ToListAsync();
     }
-
-    // GET: api/Users/5
-    [HttpGet("{id}")]
+        [HttpGet("{id}")]
     public async Task<ActionResult<Users>> GetUser(int id)
     {
         var user = await _context.users.FindAsync(id);
@@ -41,54 +36,7 @@ public class UsersController : ControllerBase
 
         return user;
     }
-
-    // Search users by username
-    [HttpGet("search/{username}")]
-    public async Task<ActionResult<IEnumerable<Users>>> SearchUsers(string username)
-    {
-        var users = await _context.users
-            .Where(u => u.username.Contains(username))
-            .ToListAsync();
-
-        if (users == null || users.Count == 0)
-        {
-            return NotFound();
-        }
-
-        return users;
-    }
-
-    // PUT: api/Users/5
-    [HttpPut("{id}")]
-    public async Task<IActionResult> PutUser(int id, Users user)
-    {
-        if (id != user.user_id)
-        {
-            return BadRequest();
-        }
-
-        _context.Entry(user).State = EntityState.Modified;
-
-        try
-        {
-            await _context.SaveChangesAsync();
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            if (!UserExists(id))
-            {
-                return NotFound();
-            }
-            else
-            {
-                throw;
-            }
-        }
-
-        return NoContent();
-    }
-
-    // POST: api/Users/register
+    // POST: api/Registration/register
     [HttpPost("register")]
     public async Task<ActionResult<Users>> RegisterUser([FromBody] Users user)
     {
@@ -160,21 +108,7 @@ public class UsersController : ControllerBase
         return CreatedAtAction(nameof(GetUser), new { id = user.user_id }, user);
     }
 
-    // GET: api/Users/email-exists/{email}
-    [HttpGet("email-exists/{email}")]
-    public async Task<IActionResult> EmailExists(string email)
-    {
-        var exists = await _context.users.AnyAsync(u => u.email == email);
-        return Ok(exists);
-    }
-
-    // GET: api/Users/phone-exists/{phoneNumber}]
-    [HttpGet("phone-exists/{phoneNumber}")]
-    public async Task<IActionResult> PhoneExists(string phoneNumber)
-    {
-        var exists = await _context.users.AnyAsync(u => u.phone_number == phoneNumber);
-        return Ok(exists);
-    }
+    // POST: api/Registration/verify
     [HttpPost("verify")]
     public async Task<IActionResult> VerifyUser([FromBody] VerifyUserModel model)
     {
@@ -197,66 +131,27 @@ public class UsersController : ControllerBase
             return BadRequest("Invalid verification code.");
         }
     }
+    // GET: api/Users/email-exists/{email}
+    [HttpGet("email-exists/{email}")]
+    public async Task<IActionResult> EmailExists(string email)
+    {
+        var exists = await _context.users.AnyAsync(u => u.email == email);
+        return Ok(exists);
+    }
+
+    // GET: api/Users/phone-exists/{phoneNumber}]
+    [HttpGet("phone-exists/{phoneNumber}")]
+    public async Task<IActionResult> PhoneExists(string phoneNumber)
+    {
+        var exists = await _context.users.AnyAsync(u => u.phone_number == phoneNumber);
+        return Ok(exists);
+    }
 
     // Model for verifying the user
     public class VerifyUserModel
     {
         public string Email { get; set; }
         public string VerificationCode { get; set; }
-    }
-    [HttpPost("request-password-reset")]
-    public async Task<IActionResult> RequestPasswordReset([FromBody] PasswordResetModel model)
-    {
-        var user = await _context.users.FirstOrDefaultAsync(u =>
-            u.email == model.EmailOrPhoneNumber || u.phone_number == model.EmailOrPhoneNumber);
-
-        if (user == null)
-        {
-            return NotFound("User not found.");
-        }
-
-        user.verification_code = GenerateVerificationCode();
-        await _context.SaveChangesAsync();
-
-        // Send the verification code to the user's email or phone number
-        // (Implementation of sending the code via email or SMS is not included in this example)
-
-        return Ok("Verification code sent.");
-    }
-    [HttpPost("reset-password")]
-    public async Task<IActionResult> ResetPassword([FromBody] PasswordResetModel model)
-    {
-        var user = await _context.users.FirstOrDefaultAsync(u => u.email == model.EmailOrPhoneNumber);
-
-        if (user == null)
-        {
-            return NotFound("User not found.");
-        }
-
-        if (user.verification_code == model.VerificationCode)
-        {
-            // Reset the password
-            user.password = model.NewPassword;
-            user.verification_code = null; // Clear the verification code after successful reset
-            await _context.SaveChangesAsync();
-            return Ok("Password has been reset.");
-        }
-        else
-        {
-            return BadRequest("Invalid verification code.");
-        }
-    }
-
-    public class PasswordResetModel
-    {
-        public string EmailOrPhoneNumber { get; set; }
-        public string VerificationCode { get; set; }
-        public string NewPassword { get; set; }
-    }
-
-    private bool UserExists(int id)
-    {
-        return _context.users.Any(e => e.user_id == id);
     }
 
     private bool IsValidEmail(string email)
@@ -296,5 +191,10 @@ public class UsersController : ControllerBase
         }
 
         return username;
+    }
+
+    private bool UserExists(int id)
+    {
+        return _context.users.Any(e => e.user_id == id);
     }
 }

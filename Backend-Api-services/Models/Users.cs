@@ -32,7 +32,7 @@ public class Users
     [Phone]
     public string phone_number { get; set; } = "";
 
-    public string verification_code { get; set; } = "";
+    public string? verification_code { get; set; } = "";
 
     public DateTime? verified_at { get; set; } = null;
 
