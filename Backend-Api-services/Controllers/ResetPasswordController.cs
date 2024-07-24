@@ -41,6 +41,27 @@ public class ResetPasswordController : ControllerBase
         return Ok("Verification code sent.");
     }
 
+    // POST: api/ResetPassword/verify
+    [HttpPost("verify")]
+    public async Task<IActionResult> VerifyCode([FromBody] VerificationModel model)
+    {
+        var user = await _context.users.FirstOrDefaultAsync(u => u.email == model.EmailOrPhoneNumber || u.phone_number == model.EmailOrPhoneNumber);
+
+        if (user == null)
+        {
+            return NotFound("User not found.");
+        }
+
+        if (user.verification_code == model.VerificationCode)
+        {
+            return Ok(true);
+        }
+        else
+        {
+            return BadRequest(false);
+        }
+    }
+
     // POST: api/ResetPassword/reset
     [HttpPost("reset")]
     public async Task<IActionResult> ResetPassword([FromBody] PasswordResetModel model)
@@ -82,6 +103,12 @@ public class ResetPasswordController : ControllerBase
         public string? EmailOrPhoneNumber { get; set; }
         public string? VerificationCode { get; set; }
         public string? NewPassword { get; set; }
+    }
+
+    public class VerificationModel
+    {
+        public string? EmailOrPhoneNumber { get; set; }
+        public string? VerificationCode { get; set; }
     }
 
     private bool IsValidPassword(string password)
