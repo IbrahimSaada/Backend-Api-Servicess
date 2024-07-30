@@ -1,4 +1,7 @@
+using Amazon.Extensions.NETCore.Setup;
+using Amazon.SimpleEmail;
 using Backend_Api_services.Models;
+using Backend_Api_services.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
@@ -18,6 +21,7 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "My API", Version = "v1" });
 });
 
+// Configure PostgreSQL with connection string from environment variables
 builder.Services.AddDbContext<apiDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
@@ -56,22 +60,37 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+// Register AWS SES client
+builder.Services.AddDefaultAWSOptions(new AWSOptions
+{
+    Region = Amazon.RegionEndpoint.USEast1,
+    Credentials = new Amazon.Runtime.BasicAWSCredentials(
+        builder.Configuration["AWS:AccessKey"],
+        builder.Configuration["AWS:SecretKey"]
+    )
+});
+builder.Services.AddAWSService<IAmazonSimpleEmailService>();
+
+// Register the email service
+builder.Services.AddSingleton<EmailService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
 {
     app.UseSwagger();
     app.UseSwaggerUI(c =>
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API v1");
+        c.RoutePrefix = string.Empty; // Serve Swagger UI at the app's root
     });
 }
 
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseCors("AllowAllOrigins");
-app.UseAuthentication(); // Add this line
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
