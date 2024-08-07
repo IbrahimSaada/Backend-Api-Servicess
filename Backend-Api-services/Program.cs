@@ -1,4 +1,5 @@
 using Amazon.Extensions.NETCore.Setup;
+using Amazon.S3;
 using Amazon.SimpleEmail;
 using Backend_Api_services.Models;
 using Backend_Api_services.Services;
@@ -60,16 +61,20 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+// Configure AWS credentials
+var awsCredentials = new Amazon.Runtime.BasicAWSCredentials(
+    builder.Configuration["AWS:AccessKey"],
+    builder.Configuration["AWS:SecretKey"]
+);
+
+var awsOptions = builder.Configuration.GetAWSOptions();
+awsOptions.Credentials = awsCredentials;
+builder.Services.AddDefaultAWSOptions(awsOptions);
+
 // Register AWS SES client
-builder.Services.AddDefaultAWSOptions(new AWSOptions
-{
-    Region = Amazon.RegionEndpoint.USEast1,
-    Credentials = new Amazon.Runtime.BasicAWSCredentials(
-        builder.Configuration["AWS:AccessKey"],
-        builder.Configuration["AWS:SecretKey"]
-    )
-});
 builder.Services.AddAWSService<IAmazonSimpleEmailService>();
+// Register AWS S3 client
+builder.Services.AddAWSService<IAmazonS3>();
 
 // Register the email service
 builder.Services.AddSingleton<EmailService>();

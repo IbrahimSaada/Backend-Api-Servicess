@@ -32,5 +32,6 @@ namespace Backend_Api_services.Models
         }
 
         public DbSet<Users> users { get; set; }
+        public DbSet<PostResponse> posts { get; set; }
     }
 }
