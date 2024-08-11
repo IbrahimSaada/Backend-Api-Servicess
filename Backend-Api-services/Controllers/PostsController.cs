@@ -1,11 +1,8 @@
-﻿// In PostsController.cs
-
-using Backend_Api_services.Models;
+﻿using Backend_Api_services.Models.Data;
+using Backend_Api_services.Models.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using RestSharp;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -24,30 +21,34 @@ public class PostsController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<PostResponse>>> GetPosts()
     {
-        var posts = await _context.posts
-                                  .Join(_context.users,
-                                        post => post.user_id,
-                                        user => user.user_id,
-                                        (post, user) => new PostResponse
-                                        {
-                                            post_id = post.post_id,
-                                            caption = post.caption,
-                                            comment_count = post.comment_count,
-                                            created_at = post.created_at,
-                                            is_public = post.is_public,
-                                            like_count = post.like_count,
-                                            media_type = post.media_type,
-                                            media_url = post.media_url,
-                                            user_id = post.user_id,
-                                            fullname = user.fullname,
-                                            profile_pic = user.profile_pic
-                                        })
+        var posts = await _context.Posts
+                                  .Include(p => p.User)
+                                  .Include(p => p.Media) // Include related media
                                   .Where(p => p.is_public)
                                   .OrderByDescending(p => p.created_at)
                                   .ToListAsync();
 
-        return Ok(posts);
+        // Map the entity data to DTOs
+        var postResponses = posts.Select(post => new PostResponse
+        {
+            post_id = post.post_id,
+            caption = post.caption,
+            comment_count = post.comment_count,
+            created_at = post.created_at,
+            is_public = post.is_public,
+            like_count = post.like_count,
+            user_id = post.user_id,
+            fullname = post.User.fullname,
+            profile_pic = post.User.profile_pic,
+            Media = post.Media.Select(media => new PostMediaResponse
+            {
+                media_id = media.media_id,
+                media_url = media.media_url,
+                media_type = media.media_type,
+                post_id = media.post_id
+            }).ToList()
+        }).ToList();
+
+        return Ok(postResponses);
     }
 }
-
-
