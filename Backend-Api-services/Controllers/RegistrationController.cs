@@ -1,4 +1,4 @@
-﻿using Backend_Api_services.Models;
+﻿using Backend_Api_services.Models.Data;
 using Backend_Api_services.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;

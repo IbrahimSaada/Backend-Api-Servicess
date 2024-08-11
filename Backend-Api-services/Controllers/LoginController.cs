@@ -1,5 +1,4 @@
-﻿using Backend_Api_services.Models;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
@@ -10,6 +9,8 @@ using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.IdentityModel.Tokens;
+using Backend_Api_services.Models.Data;
+using Backend_Api_services.Models.DTOs;
 
 [Route("api/[controller]")]
 [ApiController]

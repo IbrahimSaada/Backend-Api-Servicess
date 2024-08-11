@@ -1,7 +1,7 @@
 using Amazon.Extensions.NETCore.Setup;
 using Amazon.S3;
 using Amazon.SimpleEmail;
-using Backend_Api_services.Models;
+using Backend_Api_services.Models.Data;
 using Backend_Api_services.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
