@@ -1,7 +1,7 @@
 ﻿using Amazon.S3;
 using Amazon.S3.Model;
 using Microsoft.AspNetCore.Mvc;
-using Backend_Api_services.Models;
+using Backend_Api_services.Models.DTOs;
 
 namespace Backend_Api_services
 {
@@ -18,6 +18,7 @@ namespace Backend_Api_services
 
 
         [HttpPost]
+        [RequestSizeLimit(100_000_000)]
         public async Task<IActionResult> UploadFileAsync(IFormFile file, string bucketName, string? prefix)
         {
             var bucketExists = await Amazon.S3.Util.AmazonS3Util.DoesS3BucketExistV2Async(_s3Client, bucketName);
