@@ -38,7 +38,7 @@ public class LoginController : ControllerBase
 
         var user = await _context.users.FirstOrDefaultAsync(u =>
             (u.email == loginModel.EmailOrPhoneNumber || u.phone_number == loginModel.EmailOrPhoneNumber) &&
-            u.password == loginModel.Password); // Consider hashing the password before comparing
+            u.password == loginModel.Password); // No hashing, direct comparison
 
         if (user == null)
         {
@@ -66,7 +66,7 @@ public class LoginController : ControllerBase
             issuer: _configuration["Jwt:Issuer"],
             audience: _configuration["Jwt:Audience"],
             claims: claims,
-            expires: DateTime.Now.AddMinutes(02),
+            expires: DateTime.Now.AddMinutes(2), // Short expiration for testing
             signingCredentials: creds);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
