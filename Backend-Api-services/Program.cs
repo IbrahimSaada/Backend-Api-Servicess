@@ -3,6 +3,7 @@ using Amazon.S3;
 using Amazon.SimpleEmail;
 using Backend_Api_services.Models.Data;
 using Backend_Api_services.Services;
+using Backend_Api_services.Services.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
@@ -10,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Backend_Api_services.Services.Interfaces;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -70,7 +72,18 @@ var awsCredentials = new Amazon.Runtime.BasicAWSCredentials(
 var awsOptions = builder.Configuration.GetAWSOptions();
 awsOptions.Credentials = awsCredentials;
 builder.Services.AddDefaultAWSOptions(awsOptions);
-
+// Inside ConfigureServices method
+builder.Services.AddSingleton<IAwsS3Service, AwsS3Service>();
+builder.Services.AddSingleton<IAwsSettings>(sp => new AwsSettings
+{
+    AccessKeyId = builder.Configuration["AWS:AccessKey"],
+    SecretKey = builder.Configuration["AWS:SecretKey"],
+    RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(builder.Configuration["AWS:Region"])
+});
+builder.Services.AddSingleton<IEnvironmentSettings>(sp => new EnvironmentSettings
+{
+    ShortName = "cookingApp-dev" // Set this to your specific environment's short name, e.g., "prod" or "dev"
+});
 // Register AWS SES client
 builder.Services.AddAWSService<IAmazonSimpleEmailService>();
 // Register AWS S3 client
