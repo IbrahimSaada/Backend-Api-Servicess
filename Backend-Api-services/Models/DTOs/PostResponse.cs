@@ -19,6 +19,7 @@ namespace Backend_Api_services.Models.DTOs
 
         // List to hold associated media
         public List<PostMediaResponse> Media { get; set; } = new List<PostMediaResponse>();
+        public bool is_liked { get; set; }
     }
 }
 
