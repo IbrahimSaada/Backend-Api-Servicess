@@ -35,5 +35,7 @@ namespace Backend_Api_services.Models.Data
         public DbSet<Users> users { get; set; }
         public DbSet<Post> Posts { get; set; }
         public DbSet<PostMedia> PostMedias { get; set; }
+        public DbSet<Like> Likes { get; set; }
+        public DbSet<UserRefreshToken> UserRefreshTokens { get; set; }
     }
 }
