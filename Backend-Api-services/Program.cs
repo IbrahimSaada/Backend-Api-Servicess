@@ -45,6 +45,8 @@ builder.Logging.AddConsole();
 
 // Configure JWT authentication
 var key = Encoding.ASCII.GetBytes(builder.Configuration["Jwt:Key"]);
+var tokenLifetime = double.Parse(builder.Configuration["Jwt:AccessTokenLifetime"]);
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -59,7 +61,8 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(key)
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ClockSkew = TimeSpan.Zero
     };
 });
 
