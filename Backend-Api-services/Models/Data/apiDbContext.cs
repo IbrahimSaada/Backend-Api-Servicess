@@ -37,5 +37,6 @@ namespace Backend_Api_services.Models.Data
         public DbSet<PostMedia> PostMedias { get; set; }
         public DbSet<Like> Likes { get; set; }
         public DbSet<UserRefreshToken> UserRefreshTokens { get; set; }
+        public DbSet<Comment> Comments { get; set; }
     }
 }
