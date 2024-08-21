@@ -122,5 +122,78 @@ public class PostsController : ControllerBase
         return Ok("Like removed successfully.");
     }
 
+    // POST: api/Posts/{postId}/Comments
+    [HttpPost("{postId}/Commenting")]
+    public async Task<IActionResult> AddComment(int postId, [FromBody] CommentRequest commentRequest)
+    {
+        var post = await _context.Posts.FindAsync(postId);
+        if (post == null)
+        {
+            return NotFound("Post not found.");
+        }
+
+        var comment = new Comment
+        {
+            post_id = postId,
+            user_id = commentRequest.userid,
+            parent_comment_id = commentRequest.parentcommentid,
+            text = commentRequest.text
+        };
+
+        _context.Comments.Add(comment);
+        post.comment_count += 1; // Optional: If you track comment counts in the post
+
+        await _context.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetComments), new { postId = postId }, new { CommentId = comment.comment_id });
+    }
+
+
+    // GET: api/Posts/{postId}/Comments
+    [HttpGet("{postId}/Comments")]
+    public async Task<ActionResult<IEnumerable<CommentResponse>>> GetComments(int postId)
+    {
+        var comments = await _context.Comments
+                                      .Include(c => c.User)
+                                      .Where(c => c.post_id == postId && c.parent_comment_id == null)
+                                      .OrderByDescending(c => c.created_at)
+                                      .ToListAsync();
+
+        var commentResponses = comments.Select(c => new CommentResponse
+        {
+            commentid = c.comment_id,
+            postid = c.post_id,
+            userid = c.user_id,
+            fullname = c.User.fullname,
+            userprofilepic = c.User.profile_pic,
+            text = c.text,
+            created_at = c.created_at,
+            Replies = GetReplies(c.comment_id).ToList()
+        }).ToList();
+
+        return Ok(commentResponses);
+    }
+
+    private IEnumerable<CommentResponse> GetReplies(int parentCommentId)
+    {
+        var replies = _context.Comments
+                              .Include(c => c.User)
+                              .Where(c => c.parent_comment_id == parentCommentId)
+                              .OrderBy(c => c.created_at)
+                              .ToList();
+
+        return replies.Select(c => new CommentResponse
+        {
+            commentid = c.comment_id,
+            postid = c.post_id,
+            userid = c.user_id,
+            fullname = c.User.fullname,
+            userprofilepic = c.User.profile_pic,
+            text = c.text,
+            created_at = c.created_at,
+            Replies = GetReplies(c.comment_id).ToList()
+        });
+    }
+
 
 }
