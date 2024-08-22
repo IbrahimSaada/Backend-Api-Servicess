@@ -3,6 +3,7 @@ using Backend_Api_services.Models.DTOs;
 using Backend_Api_services.Models.Entities;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -194,6 +195,93 @@ public class PostsController : ControllerBase
             Replies = GetReplies(c.comment_id).ToList()
         });
     }
+
+    // PUT: api/Posts/{postId}/Comments/{commentId}
+    [HttpPut("{postId}/Comments/{commentId}")]
+    public async Task<IActionResult> EditComment(int postId, int commentId, [FromBody] CommentRequest commentRequest)
+    {
+        var post = await _context.Posts.FindAsync(postId);
+        if (post == null)
+        {
+            return NotFound("Post not found.");
+        }
+
+        var comment = await _context.Comments.FindAsync(commentId);
+        if (comment == null || comment.post_id != postId)
+        {
+            return NotFound("Comment not found.");
+        }
+
+        if (comment.user_id != commentRequest.userid)
+        {
+            return BadRequest("You are not authorized to edit this comment.");
+        }
+
+        comment.text = commentRequest.text;
+
+        await _context.SaveChangesAsync();
+
+        return Ok("Comment updated successfully.");
+    }
+
+    // DELETE: api/Posts/{postId}/Comments/{commentId}
+    [HttpDelete("{postId}/Comments/{commentId}")]
+    public async Task<IActionResult> DeleteComment(int postId, int commentId, [FromQuery] int userId)
+    {
+        var post = await _context.Posts.FindAsync(postId);
+        if (post == null)
+        {
+            return NotFound("Post not found.");
+        }
+
+        var comment = await _context.Comments.FindAsync(commentId);
+        if (comment == null || comment.post_id != postId)
+        {
+            return NotFound("Comment not found.");
+        }
+
+        if (comment.user_id != userId)
+        {
+            return BadRequest("You are not authorized to delete this comment.");
+        }
+
+        // Get the total number of deleted comments including nested replies
+        int deletedCommentsCount = await DeleteCommentAndReplies(commentId);
+
+        // Decrement the comment count in the post by the number of deleted comments
+        post.comment_count -= deletedCommentsCount;
+
+        await _context.SaveChangesAsync();
+
+        return Ok($"Comment and its nested replies deleted successfully. Total comments deleted: {deletedCommentsCount}");
+    }
+
+    private async Task<int> DeleteCommentAndReplies(int commentId)
+    {
+        int deletedCount = 1;  // Start with 1 for the current comment
+
+        // Find all nested comments (replies) of the comment being deleted
+        var nestedComments = await _context.Comments
+            .Where(c => c.parent_comment_id == commentId)
+            .ToListAsync();
+
+        foreach (var nestedComment in nestedComments)
+        {
+            // Recursively delete nested comments and count how many are deleted
+            deletedCount += await DeleteCommentAndReplies(nestedComment.comment_id);
+        }
+
+        // Delete the base comment itself
+        var comment = await _context.Comments.FindAsync(commentId);
+        if (comment != null)
+        {
+            _context.Comments.Remove(comment);
+        }
+
+        return deletedCount;
+    }
+
+
 
 
 }
