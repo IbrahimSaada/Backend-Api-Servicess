@@ -38,5 +38,6 @@ namespace Backend_Api_services.Models.Data
         public DbSet<Like> Likes { get; set; }
         public DbSet<UserRefreshToken> UserRefreshTokens { get; set; }
         public DbSet<Comment> Comments { get; set; }
+        public DbSet<Reports> Reports { get; set; }
     }
 }
