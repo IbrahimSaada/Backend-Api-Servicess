@@ -1,4 +1,5 @@
-﻿using Backend_Api_services.Models.Entities;
+﻿using Backend_Api_services.Models.Entites_Admin;
+using Backend_Api_services.Models.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -39,5 +40,6 @@ namespace Backend_Api_services.Models.Data
         public DbSet<UserRefreshToken> UserRefreshTokens { get; set; }
         public DbSet<Comment> Comments { get; set; }
         public DbSet<Reports> Reports { get; set; }
+        public DbSet<Admin> Admins { get; set; }
     }
 }
