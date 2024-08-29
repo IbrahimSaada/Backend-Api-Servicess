@@ -55,7 +55,8 @@ public class LoginController : ControllerBase
         // Save the refresh token in the database
         var userRefreshToken = new UserRefreshToken
         {
-            userid = user.user_id,
+            userid = user.user_id,   // Set UserId
+            adminid = null,          // Ensure AdminId is null for users
             token = refreshToken,
             expiresat = DateTime.UtcNow.AddMinutes(double.Parse(_configuration["Jwt:RefreshTokenLifetime"])) // Refresh token lifetime from config
         };
@@ -68,6 +69,7 @@ public class LoginController : ControllerBase
         {
             id = userRefreshToken.id,
             userid = userRefreshToken.userid,
+            adminid = userRefreshToken.adminid,  // Include AdminId in the DTO if necessary
             token = userRefreshToken.token,
             expiresat = userRefreshToken.expiresat,
             createdat = userRefreshToken.createdat
@@ -81,6 +83,7 @@ public class LoginController : ControllerBase
             Username = user.username
         });
     }
+
 
     private string GenerateJwtToken(string username)
     {
@@ -125,7 +128,7 @@ public class LoginController : ControllerBase
         }
 
         var storedRefreshToken = await _context.UserRefreshTokens
-            .FirstOrDefaultAsync(rt => rt.token == refreshTokenRequest.token);
+            .FirstOrDefaultAsync(rt => rt.token == refreshTokenRequest.token && rt.userid != null);
 
         // Check if the refresh token exists and is still valid
         if (storedRefreshToken == null || storedRefreshToken.expiresat <= DateTime.UtcNow)
@@ -152,7 +155,7 @@ public class LoginController : ControllerBase
         return Ok(new { AccessToken = newAccessToken, RefreshToken = newRefreshToken });
     }
 
-    // POST: api/Login/Logout
+
     [HttpPost("Logout")]
     public async Task<IActionResult> Logout([FromBody] LogoutModel logoutModel)
     {
@@ -171,9 +174,11 @@ public class LoginController : ControllerBase
 
         return Ok("Logged out successfully.");
     }
+
     public class LogoutModel
     {
         public int UserId { get; set; }
         public string RefreshToken { get; set; }
     }
+
 }
