@@ -22,17 +22,24 @@ namespace Backend_Api_services.Controllers
         /// <summary>
         /// Get pre-signed URLs for direct upload from the client
         /// </summary>
-        /// <returns>List of Pre-signed URLs, bucket and object keys</returns>
+        /// <returns>List of Pre-signed URLs, bucket, and object keys</returns>
         [HttpPost("s3-presigned-upload-urls")]
         [ResponseCache(NoStore = true, Duration = 0)]
-        public async Task<ActionResult<List<object>>> GetS3PresignedUploadUrlsAsync([FromBody] Dictionary<string, List<string>> payload)
+        public async Task<ActionResult<List<object>>> GetS3PresignedUploadUrlsAsync([FromBody] Dictionary<string, string> payload)
         {
-            if (payload == null || !payload.ContainsKey("fileNames"))
+            if (payload == null || !payload.ContainsKey("fileNames") || !payload.ContainsKey("folderName"))
             {
-                return BadRequest("fileNames field is required.");
+                return BadRequest("Both fileNames and folderName fields are required.");
             }
 
-            List<string> fileNames = payload["fileNames"];
+            string[] fileNames = payload["fileNames"].Split(',');
+            string folderName = payload["folderName"];
+
+            if (string.IsNullOrEmpty(folderName))
+            {
+                return BadRequest("folderName cannot be empty.");
+            }
+
             var presignedUrls = new List<object>();
 
             foreach (var fileName in fileNames)
@@ -43,7 +50,7 @@ namespace Backend_Api_services.Controllers
                 string urlFriendlyFileName = Regex.Replace(fileNameWithoutExtension, "[^A-Za-z0-9]", "-");
                 string objectKey = $"{Guid.NewGuid()}-{urlFriendlyFileName}{fileExtension}";
 
-                string presignedUrl = _awsS3Service.GetPresignedUrl(objectKey);
+                string presignedUrl = _awsS3Service.GetPresignedUrl(objectKey, folderName);
 
                 presignedUrls.Add(new
                 {
