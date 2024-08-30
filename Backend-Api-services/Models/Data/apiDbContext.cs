@@ -42,5 +42,8 @@ namespace Backend_Api_services.Models.Data
         public DbSet<Reports> Reports { get; set; }
         public DbSet<shared_posts> SharedPosts { get; set; }
         public DbSet<Admin> Admins { get; set; }
+        public DbSet<stories> Stories { get; set; }
+        public DbSet<storiesmedia> StoriesMedia { get; set; }
+        public DbSet<storyviews> StoryViews { get; set; }
     }
 }
