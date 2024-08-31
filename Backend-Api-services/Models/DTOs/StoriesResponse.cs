@@ -11,8 +11,9 @@ namespace Backend_Api_services.Models.DTOs
         public DateTime expiresat { get; set; }
         public bool isactive { get; set; }
         public int viewscount { get; set; }
-        public bool isviewed { get; set; } 
-
+        public bool isviewed { get; set; }
+        public string fullname { get; set; } = ""; // Add fullname field
+        public string profile_pic { get; set; } = ""; // Add profile_pic field
         // List of associated media details
         public List<StoriesMediaResponse> Media { get; set; } = new List<StoriesMediaResponse>();
     }

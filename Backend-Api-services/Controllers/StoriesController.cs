@@ -28,26 +28,53 @@ namespace Backend_Api_services.Controllers
                 return BadRequest(ModelState);
             }
 
-            var story = new stories
-            {
-                user_id = storyRequest.user_id,
+            // Check if there's an existing active story for the user within the 24-hour window
+            var existingStory = await _context.Stories
+                                              .Include(s => s.Media)
+                                              .FirstOrDefaultAsync(s => s.user_id == storyRequest.user_id && s.isactive);
 
-            };
-
-            if (storyRequest.Media != null && storyRequest.Media.Any())
+            // If an existing active story is found, associate new media with it
+            if (existingStory != null && existingStory.expiresat > DateTime.UtcNow)
             {
-                story.Media = storyRequest.Media.Select(m => new storiesmedia
+                if (storyRequest.Media != null && storyRequest.Media.Any())
                 {
-                    media_url = m.media_url,
-                    media_type = m.media_type,
-                    stories = story
-                }).ToList();
+                    existingStory.Media.AddRange(storyRequest.Media.Select(m => new storiesmedia
+                    {
+                        media_url = m.media_url,
+                        media_type = m.media_type,
+                        stories = existingStory
+                    }).ToList());
+
+                    // Update the expiresat to extend it, if needed
+                    existingStory.expiresat = existingStory.Media.Max(m => m.expiresat);
+                }
+
+                await _context.SaveChangesAsync();
+                return CreatedAtAction(nameof(GetStory), new { id = existingStory.story_id }, existingStory);
             }
+            else
+            {
+                // No active story found, create a new story
+                var newStory = new stories
+                {
+                    user_id = storyRequest.user_id,
+                };
 
-            _context.Stories.Add(story);
-            await _context.SaveChangesAsync();
+                if (storyRequest.Media != null && storyRequest.Media.Any())
+                {
+                    newStory.Media = storyRequest.Media.Select(m => new storiesmedia
+                    {
+                        media_url = m.media_url,
+                        media_type = m.media_type,
+                        stories = newStory
+                    }).ToList();
+                }
 
-            return CreatedAtAction(nameof(GetStory), new { id = story.story_id }, story);
+                _context.Stories.Add(newStory);
+                await _context.SaveChangesAsync();
+
+                return CreatedAtAction(nameof(GetStory), new { id = newStory.story_id }, newStory);
+            }
         }
 
         // GET: api/Stories/{id}
@@ -86,41 +113,43 @@ namespace Backend_Api_services.Controllers
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetStories(int userId)
         {
-            // Fetch all stories including their media
-            var stories = await _context.Stories
-                                        .Include(s => s.Media)
-                                        .ToListAsync();
+            // Fetch all active stories that have not expired, including the user information
+            var activeStories = await _context.Stories
+                                              .Include(s => s.Media)
+                                              .Include(s => s.users) // Include the associated user
+                                              .Where(s => s.isactive && s.expiresat > DateTime.UtcNow)
+                                              .ToListAsync();
 
-            // Create the response list
-            var responseList = new List<StoriesResponse>();
+            // Fetch all the view data for this user in one query
+            var viewedStoryIds = await _context.StoryViews
+                                               .Where(v => v.viewer_id == userId)
+                                               .Select(v => v.story_id)
+                                               .ToListAsync();
 
-            foreach (var story in stories)
+            // Create the response list with the isviewed status, fullname, and profile_pic
+            var responseList = activeStories.Select(story => new StoriesResponse
             {
-                // Check if the story has been viewed by the specified user
-                bool isViewed = await _context.StoryViews
-                                              .AnyAsync(v => v.story_id == story.story_id && v.viewer_id == userId);
-
-                var response = new StoriesResponse
+                story_id = story.story_id,
+                user_id = story.user_id,
+                createdat = story.createdat,
+                expiresat = story.expiresat,
+                isactive = story.isactive,
+                viewscount = story.viewscount,
+                isviewed = viewedStoryIds.Contains(story.story_id),
+                fullname = story.users.fullname,  // Get the user's full name
+                profile_pic = story.users.profile_pic,  // Get the user's profile picture
+                Media = story.Media.Select(m => new StoriesMediaResponse
                 {
-                    story_id = story.story_id,
-                    user_id = story.user_id,
-                    createdat = story.createdat,
-                    expiresat = story.expiresat,
-                    isactive = story.isactive,
-                    viewscount = story.viewscount,
-                    isviewed = isViewed,
-                    Media = story.Media.Select(m => new StoriesMediaResponse
-                    {
-                        media_id = m.media_id,
-                        media_url = m.media_url,
-                        media_type = m.media_type
-                    }).ToList()
-                };
-
-                responseList.Add(response);
-            }
+                    media_id = m.media_id,
+                    media_url = m.media_url,
+                    media_type = m.media_type
+                }).ToList()
+            }).ToList();
 
             return Ok(responseList);
         }
+
+
+
     }
 }
