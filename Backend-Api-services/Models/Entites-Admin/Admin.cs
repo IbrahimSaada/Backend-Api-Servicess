@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Backend_Api_services.Models.Entites_Admin
@@ -7,12 +8,19 @@ namespace Backend_Api_services.Models.Entites_Admin
     public class Admin
     {
         [Key]
-        public int admin_id { get; set; }  // Corresponds to admin_id in the database
+        public int admin_id { get; set; }
 
-        public string username { get; set; }  // Corresponds to username in the database
+        [Required]
+        [EmailAddress]
+        public string email { get; set; }  // Ensure email is unique
 
-        public string email { get; set; }  // Corresponds to email in the database
+        [Required]
+        public string password { get; set; }
 
-        public string password { get; set; }  // Corresponds to password in the database
+        [Required]
+        public string username { get; set; }  // This will be auto-generated
+
+        [Required]
+        public string role { get; set; } = "admin";
     }
 }
