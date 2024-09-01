@@ -1,11 +1,15 @@
 ﻿using Backend_Api_services.Models.Data;
 using Backend_Api_services.Models.DTOs_Admin;
 using Backend_Api_services.Models.Entites_Admin;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Linq;
+using System.Threading.Tasks;
 
 [Route("api/admin/[controller]")]
 [ApiController]
+[Authorize(Roles = "admin,superadmin")]  // Require the user to be either "admin" or "superadmin"
 public class UserManagementControllerAdmin : ControllerBase
 {
     private readonly apiDbContext _context;
