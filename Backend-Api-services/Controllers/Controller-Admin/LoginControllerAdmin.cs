@@ -12,6 +12,7 @@ using Backend_Api_services.Models.Data;
 using Backend_Api_services.Models.DTOs_Admin;
 using Backend_Api_services.Models.Entites_Admin;
 using System.Security.Cryptography;
+using BCrypt.Net;
 using Backend_Api_services.Models.DTOs;
 using Backend_Api_services.Models.Entities;
 
@@ -38,22 +39,22 @@ namespace Backend_Api_services.Controllers.Controllers_Admin
                 return BadRequest("Email and password are required.");
             }
 
-            var admin = await _context.Admins.FirstOrDefaultAsync(a =>
-                a.email == loginModel.Email && a.password == loginModel.Password); // No hashing, direct comparison for now
+            var admin = await _context.Admins.FirstOrDefaultAsync(a => a.email == loginModel.Email);
 
-            if (admin == null)
+            if (admin == null || !BCrypt.Net.BCrypt.Verify(loginModel.Password, admin.password))
             {
                 return Unauthorized("Invalid email or password combination.");
             }
 
-            var accessToken = GenerateJwtToken(admin.username);
+            // Generate JWT token with the admin's role
+            var accessToken = GenerateJwtToken(admin.username, admin.role);
             var refreshToken = GenerateRefreshToken();
 
             // Save the refresh token in the database
             var adminRefreshToken = new UserRefreshToken
             {
-                adminid = admin.admin_id,    // Set the AdminId
-                userid = null,              // Ensure UserId is null
+                adminid = admin.admin_id, // Set the AdminId
+                userid = null, // Ensure UserId is null
                 token = refreshToken,
                 expiresat = DateTime.UtcNow.AddMinutes(double.Parse(_configuration["Jwt:RefreshTokenLifetime"]))
             };
@@ -69,13 +70,13 @@ namespace Backend_Api_services.Controllers.Controllers_Admin
             });
         }
 
-        private string GenerateJwtToken(string username)
+        private string GenerateJwtToken(string username, string role)
         {
             var claims = new[]
             {
                 new Claim(JwtRegisteredClaimNames.Sub, username),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new Claim(ClaimTypes.Role, "Admin") // Adding the Admin role
+                new Claim(ClaimTypes.Role, role) // Adding the actual Admin role (admin or superadmin)
             };
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
@@ -125,7 +126,7 @@ namespace Backend_Api_services.Controllers.Controllers_Admin
                 return Unauthorized("Admin not found.");
             }
 
-            var newAccessToken = GenerateJwtToken(admin.username);
+            var newAccessToken = GenerateJwtToken(admin.username, admin.role);
             var newRefreshToken = GenerateRefreshToken();
 
             storedRefreshToken.token = newRefreshToken;
