@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Backend_Api_services.Services.Interfaces;
+using Backend_Api_services.BackgroundServices;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -94,6 +95,9 @@ builder.Services.AddAWSService<IAmazonS3>();
 
 // Register the email service
 builder.Services.AddSingleton<EmailService>();
+
+// Register the StoryExpirationService background service
+builder.Services.AddHostedService<StoryExpirationService>(); // Add this line
 
 var app = builder.Build();
 
