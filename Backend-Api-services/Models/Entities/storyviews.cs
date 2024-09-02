@@ -17,7 +17,7 @@ namespace Backend_Api_services.Models.Entities
         [JsonIgnore]  // Prevent cyclical references
         public stories stories { get; set; }
 
-        [ForeignKey("user_id")]
+        [ForeignKey("viewer_id")] // Corrected ForeignKey reference
         [JsonIgnore]  // Prevent cyclical references
         public Users viewer { get; set; }
     }
