@@ -22,6 +22,7 @@ namespace Backend_Api_services.Models.DTOs
     {
         public int media_id { get; set; } 
         public string media_url { get; set; }
-        public string media_type { get; set; } 
+        public string media_type { get; set; }
+        public DateTime expiresat { get; set; }  // Reflect the expiration time of the individual media
     }
 }

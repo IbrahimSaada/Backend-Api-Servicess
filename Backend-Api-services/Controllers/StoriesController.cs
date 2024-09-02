@@ -113,6 +113,13 @@ namespace Backend_Api_services.Controllers
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetStories(int userId)
         {
+            // Optional: Check if the user exists to avoid unnecessary processing
+            var userExists = await _context.users.AnyAsync(u => u.user_id == userId);
+            if (!userExists)
+            {
+                return NotFound("User not found");
+            }
+
             // Fetch all active stories that have not expired, including the user information
             var activeStories = await _context.Stories
                                               .Include(s => s.Media)
@@ -138,13 +145,17 @@ namespace Backend_Api_services.Controllers
                 isviewed = viewedStoryIds.Contains(story.story_id),
                 fullname = story.users.fullname,  // Get the user's full name
                 profile_pic = story.users.profile_pic,  // Get the user's profile picture
-                Media = story.Media.Select(m => new StoriesMediaResponse
-                {
-                    media_id = m.media_id,
-                    media_url = m.media_url,
-                    media_type = m.media_type
-                }).ToList()
-            }).ToList();
+                Media = story.Media
+                             .Where(m => m.expiresat > DateTime.UtcNow) // Only include unexpired media
+                             .Select(m => new StoriesMediaResponse
+                             {
+                                 media_id = m.media_id,
+                                 media_url = m.media_url,
+                                 media_type = m.media_type,
+                                 expiresat = m.expiresat // Include expiresat for frontend reference
+                             }).ToList()
+            }).Where(r => r.Media.Any()) // Only return stories that have at least one unexpired media item
+            .ToList();
 
             return Ok(responseList);
         }
