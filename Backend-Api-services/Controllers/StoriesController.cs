@@ -160,7 +160,75 @@ namespace Backend_Api_services.Controllers
             return Ok(responseList);
         }
 
+        // POST: api/Stories/View
+        [HttpPost("View")]
+        public async Task<IActionResult> RecordStoryView([FromBody] StoryViewRequest viewRequest)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
+            // Fetch the story to check its owner
+            var story = await _context.Stories.FirstOrDefaultAsync(s => s.story_id == viewRequest.story_id);
 
+            if (story == null)
+            {
+                return NotFound(new { message = "Story not found." });
+            }
+
+            // Check if the viewer is the owner of the story
+            if (story.user_id == viewRequest.viewer_id)
+            {
+                return Ok(new { message = "Story owner is not counted as a viewer." });
+            }
+
+            // Check if the user has already viewed this story
+            var existingView = await _context.StoryViews
+                                             .FirstOrDefaultAsync(v => v.story_id == viewRequest.story_id && v.viewer_id == viewRequest.viewer_id);
+
+            if (existingView != null)
+            {
+                // User has already viewed this story, do not count it again
+                return Ok(new { message = "Story already viewed by this user." });
+            }
+
+            // Record the view
+            var storyView = new storyviews
+            {
+                story_id = viewRequest.story_id,
+                viewer_id = viewRequest.viewer_id,
+            };
+
+            _context.StoryViews.Add(storyView);
+
+            // Increment the viewscount in the stories table
+            story.viewscount++;
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Story view recorded successfully." });
+        }
+
+        // GET: api/Stories/{storyId}/viewers
+        [HttpGet("{storyId}/viewers")]
+        public async Task<IActionResult> GetStoryViewers(int storyId)
+        {
+            // Fetch all users who viewed the story
+            var viewers = await _context.StoryViews
+                                        .Where(v => v.story_id == storyId)
+                                        .Include(v => v.viewer) // Include viewer information
+                                        .Select(v => new StoryViewerResponse
+                                        {
+                                            viewer_id = v.viewer_id,
+                                            fullname = v.viewer.fullname,
+                                            profile_pic = v.viewer.profile_pic,
+                                            viewed_at = v.viewedat
+                                        })
+                                        .ToListAsync();
+
+            // Return the list of viewers
+            return Ok(viewers);
+        }
     }
 }
