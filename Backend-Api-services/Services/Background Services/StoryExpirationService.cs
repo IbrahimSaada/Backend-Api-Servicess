@@ -60,7 +60,7 @@ namespace Backend_Api_services.BackgroundServices
                 }
 
                 // Retrieve the delay time from the environment variable, defaulting to 15 minutes
-                var delayMinutes = _configuration.GetValue<int>("STORY_EXPIRATION_CHECK_INTERVAL_MINUTES", 3);
+                var delayMinutes = _configuration.GetValue<int>("STORY_EXPIRATION_CHECK_INTERVAL_MINUTES", 15);
                 _logger.LogInformation("Next check will occur in {DelayMinutes} minutes.", delayMinutes);
                 await Task.Delay(TimeSpan.FromMinutes(delayMinutes), stoppingToken);
             }
