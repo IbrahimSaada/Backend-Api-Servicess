@@ -29,6 +29,24 @@ public class LoginController : ControllerBase
         _configuration = configuration;
     }
 
+    // Helper method to generate the signature
+    private string GenerateSignature(string data)
+    {
+        var secretKey = _configuration["AppSecretKey"];
+        using (var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secretKey)))
+        {
+            var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
+            return Convert.ToBase64String(hash);
+        }
+    }
+
+    // Helper method to validate the signature
+    private bool ValidateSignature(string receivedSignature, string data)
+    {
+        var generatedSignature = GenerateSignature(data);
+        return generatedSignature == receivedSignature;
+    }
+
     // POST: api/Login
     [HttpPost]
     public async Task<IActionResult> Login([FromBody] LoginModel loginModel)
@@ -36,6 +54,22 @@ public class LoginController : ControllerBase
         if (loginModel == null || string.IsNullOrEmpty(loginModel.EmailOrPhoneNumber) || string.IsNullOrEmpty(loginModel.Password))
         {
             return BadRequest("Email or phone number and password are required.");
+        }
+
+        // Extract signature from headers
+        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        if (string.IsNullOrEmpty(signature))
+        {
+            return Unauthorized("Signature missing.");
+        }
+
+        // Create string representation for signing (could use JSON serialization)
+        var requestData = $"{loginModel.EmailOrPhoneNumber}:{loginModel.Password}";
+
+        // Validate the signature
+        if (!ValidateSignature(signature, requestData))
+        {
+            return Unauthorized("Invalid signature.");
         }
 
         var user = await _context.users.FirstOrDefaultAsync(u =>
@@ -64,26 +98,14 @@ public class LoginController : ControllerBase
         _context.UserRefreshTokens.Add(userRefreshToken);
         await _context.SaveChangesAsync();
 
-        // Map the entity to the DTO
-        var userRefreshTokenDTO = new UserRefreshTokenDTO
-        {
-            id = userRefreshToken.id,
-            userid = userRefreshToken.userid,
-            adminid = userRefreshToken.adminid,  // Include AdminId in the DTO if necessary
-            token = userRefreshToken.token,
-            expiresat = userRefreshToken.expiresat,
-            createdat = userRefreshToken.createdat
-        };
-
         return Ok(new
         {
             Token = accessToken,
-            RefreshToken = userRefreshTokenDTO.token,
+            RefreshToken = refreshToken,
             UserId = user.user_id,
             Username = user.username
         });
     }
-
 
     private string GenerateJwtToken(string username)
     {
@@ -96,14 +118,13 @@ public class LoginController : ControllerBase
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        // Use the token lifetime setting from the configuration
         var tokenLifetime = double.Parse(_configuration["Jwt:AccessTokenLifetime"]);
 
         var token = new JwtSecurityToken(
             issuer: _configuration["Jwt:Issuer"],
             audience: _configuration["Jwt:Audience"],
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(tokenLifetime), // Set the token expiration dynamically
+            expires: DateTime.UtcNow.AddMinutes(tokenLifetime),
             signingCredentials: creds);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
@@ -127,16 +148,27 @@ public class LoginController : ControllerBase
             return BadRequest("Invalid request.");
         }
 
+        // Extract signature from headers
+        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        if (string.IsNullOrEmpty(signature))
+        {
+            return Unauthorized("Signature missing.");
+        }
+
+        // Validate the signature
+        if (!ValidateSignature(signature, refreshTokenRequest.token))
+        {
+            return Unauthorized("Invalid signature.");
+        }
+
         var storedRefreshToken = await _context.UserRefreshTokens
             .FirstOrDefaultAsync(rt => rt.token == refreshTokenRequest.token && rt.userid != null);
 
-        // Check if the refresh token exists and is still valid
         if (storedRefreshToken == null || storedRefreshToken.expiresat <= DateTime.UtcNow)
         {
             return Unauthorized("Invalid or expired refresh token.");
         }
 
-        // Generate a new access token
         var user = await _context.users.FirstOrDefaultAsync(u => u.user_id == storedRefreshToken.userid);
         if (user == null)
         {
@@ -146,7 +178,6 @@ public class LoginController : ControllerBase
         var newAccessToken = GenerateJwtToken(user.username);
         var newRefreshToken = GenerateRefreshToken();
 
-        // Optionally, replace the old refresh token with a new one
         storedRefreshToken.token = newRefreshToken;
         storedRefreshToken.expiresat = DateTime.UtcNow.AddMinutes(double.Parse(_configuration["Jwt:RefreshTokenLifetime"]));
 
@@ -154,7 +185,6 @@ public class LoginController : ControllerBase
 
         return Ok(new { AccessToken = newAccessToken, RefreshToken = newRefreshToken });
     }
-
 
     [HttpPost("Logout")]
     public async Task<IActionResult> Logout([FromBody] LogoutModel logoutModel)
@@ -175,7 +205,7 @@ public class LoginController : ControllerBase
         return Ok("Logged out successfully.");
     }
 
-    public class LogoutModel
+public class LogoutModel
     {
         public int UserId { get; set; }
         public string RefreshToken { get; set; }
