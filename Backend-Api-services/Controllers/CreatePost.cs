@@ -1,30 +1,42 @@
 ﻿using Backend_Api_services.Models.Data;
 using Backend_Api_services.Models.DTOs;
 using Backend_Api_services.Models.Entities;
+using Microsoft.AspNetCore.Authorization;  // For JWT Authorization
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
-using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;  // For HMAC
+using System.Text;
 using System.Threading.Tasks;
 
 namespace Backend_Api_services.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]  // Require JWT authentication for the whole controller
     public class CreatePostController : ControllerBase
     {
         private readonly apiDbContext _context;
+        private readonly IConfiguration _configuration;
 
-        public CreatePostController(apiDbContext context)
+        public CreatePostController(apiDbContext context, IConfiguration configuration)
         {
             _context = context;
+            _configuration = configuration;
         }
 
         // POST: api/createpost
         [HttpPost]
         public async Task<ActionResult<PostResponse>> CreatePost([FromBody] PostRequest postRequest)
         {
+            // Check if the signature is valid
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            if (string.IsNullOrEmpty(signature) || !ValidateSignature(signature, postRequest))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             if (postRequest == null)
             {
                 return BadRequest("Invalid post data.");
@@ -102,6 +114,32 @@ namespace Backend_Api_services.Controllers
             };
 
             return Ok(postResponse);
+        }
+
+        // Helper method to validate the HMAC signature
+        private bool ValidateSignature(string receivedSignature, PostRequest postRequest)
+        {
+            // Concatenate the data to sign
+            var dataToSign = $"{postRequest.user_id}:{postRequest.caption}:{postRequest.is_public.ToString().ToLower()}";
+            Console.WriteLine($"Data Signed on Server: {dataToSign}");  // Log the exact data being signed
+
+            // Retrieve the shared secret key
+            var secretKey = _configuration["AppSecretKey"];
+
+            // Compute the HMAC-SHA256 signature
+            using (var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secretKey)))
+            {
+                var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(dataToSign));
+                var computedSignature = Convert.ToBase64String(computedHash);
+
+
+                // Debugging: Log the computed signature and the received signature
+                Console.WriteLine($"Computed Signature: {computedSignature}");
+                Console.WriteLine($"Received Signature: {receivedSignature}");
+
+                // Compare the computed signature with the received one
+                return computedSignature == receivedSignature;
+            }
         }
     }
 }
