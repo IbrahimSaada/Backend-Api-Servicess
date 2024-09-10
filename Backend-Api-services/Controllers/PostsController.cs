@@ -1,22 +1,26 @@
 ﻿using Backend_Api_services.Models.Data;
 using Backend_Api_services.Models.DTOs;
 using Backend_Api_services.Models.Entities;
+using Backend_Api_services.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Hosting;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
 [Route("api/[controller]")]
 [ApiController]
+[Authorize]  // Apply JWT authorization to all endpoints in this controller
 public class PostsController : ControllerBase
 {
     private readonly apiDbContext _context;
+    private readonly SignatureService _signatureService;
 
-    public PostsController(apiDbContext context)
+    public PostsController(apiDbContext context, SignatureService signatureService)
     {
         _context = context;
+        _signatureService = signatureService;
     }
 
     // GET: api/Posts
@@ -25,12 +29,11 @@ public class PostsController : ControllerBase
     {
         var posts = await _context.Posts
                                   .Include(p => p.User)
-                                  .Include(p => p.Media) // Include related media
+                                  .Include(p => p.Media)
                                   .Where(p => p.is_public)
                                   .OrderByDescending(p => p.created_at)
                                   .ToListAsync();
 
-        // Map the entity data to DTOs
         var postResponses = posts.Select(post => new PostResponse
         {
             post_id = post.post_id,
@@ -54,10 +57,20 @@ public class PostsController : ControllerBase
 
         return Ok(postResponses);
     }
+
     // POST: api/Posts/Like
     [HttpPost("Like")]
     public async Task<IActionResult> LikePost([FromBody] LikeRequest likeRequest)
     {
+        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        var dataToSign = $"{likeRequest.user_id}:{likeRequest.post_id}";
+
+        // Validate the signature
+        if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+        {
+            return Unauthorized("Invalid or missing signature.");
+        }
+
         var postId = likeRequest.post_id;
         var userId = likeRequest.user_id;
 
@@ -82,8 +95,6 @@ public class PostsController : ControllerBase
         };
 
         _context.Likes.Add(like);
-
-        // Increment the like_count in the Posts table
         post.like_count += 1;
 
         await _context.SaveChangesAsync();
@@ -95,6 +106,15 @@ public class PostsController : ControllerBase
     [HttpPost("Unlike")]
     public async Task<IActionResult> UnlikePost([FromBody] LikeRequest likeRequest)
     {
+        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        var dataToSign = $"{likeRequest.user_id}:{likeRequest.post_id}";
+
+        // Validate the signature
+        if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+        {
+            return Unauthorized("Invalid or missing signature.");
+        }
+
         var postId = likeRequest.post_id;
         var userId = likeRequest.user_id;
 
@@ -112,10 +132,7 @@ public class PostsController : ControllerBase
             return BadRequest("You have not liked this post.");
         }
 
-        // Remove the like record
         _context.Likes.Remove(like);
-
-        // Decrement the like_count in the Posts table
         post.like_count -= 1;
 
         await _context.SaveChangesAsync();
@@ -123,10 +140,19 @@ public class PostsController : ControllerBase
         return Ok("Like removed successfully.");
     }
 
-    // POST: api/Posts/{postId}/Comments
+    // POST: api/Posts/{postId}/Commenting
     [HttpPost("{postId}/Commenting")]
     public async Task<IActionResult> AddComment(int postId, [FromBody] CommentRequest commentRequest)
     {
+        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        var dataToSign = $"{commentRequest.userid}:{postId}:{commentRequest.text}";
+
+        // Validate the signature
+        if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+        {
+            return Unauthorized("Invalid or missing signature.");
+        }
+
         var post = await _context.Posts.FindAsync(postId);
         if (post == null)
         {
@@ -142,13 +168,12 @@ public class PostsController : ControllerBase
         };
 
         _context.Comments.Add(comment);
-        post.comment_count += 1; // Optional: If you track comment counts in the post
+        post.comment_count += 1;
 
         await _context.SaveChangesAsync();
 
         return CreatedAtAction(nameof(GetComments), new { postId = postId }, new { CommentId = comment.comment_id });
     }
-
 
     // GET: api/Posts/{postId}/Comments
     [HttpGet("{postId}/Comments")]
@@ -200,6 +225,15 @@ public class PostsController : ControllerBase
     [HttpPut("{postId}/Comments/{commentId}")]
     public async Task<IActionResult> EditComment(int postId, int commentId, [FromBody] CommentRequest commentRequest)
     {
+        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        var dataToSign = $"{commentRequest.userid}:{postId}:{commentRequest.text}";
+
+        // Validate the signature
+        if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+        {
+            return Unauthorized("Invalid or missing signature.");
+        }
+
         var post = await _context.Posts.FindAsync(postId);
         if (post == null)
         {
@@ -228,6 +262,15 @@ public class PostsController : ControllerBase
     [HttpDelete("{postId}/Comments/{commentId}")]
     public async Task<IActionResult> DeleteComment(int postId, int commentId, [FromQuery] int userId)
     {
+        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        var dataToSign = $"{userId}:{postId}:{commentId}";
+
+        // Validate the signature
+        if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+        {
+            return Unauthorized("Invalid or missing signature.");
+        }
+
         var post = await _context.Posts.FindAsync(postId);
         if (post == null)
         {
@@ -260,18 +303,15 @@ public class PostsController : ControllerBase
     {
         int deletedCount = 1;  // Start with 1 for the current comment
 
-        // Find all nested comments (replies) of the comment being deleted
         var nestedComments = await _context.Comments
             .Where(c => c.parent_comment_id == commentId)
             .ToListAsync();
 
         foreach (var nestedComment in nestedComments)
         {
-            // Recursively delete nested comments and count how many are deleted
             deletedCount += await DeleteCommentAndReplies(nestedComment.comment_id);
         }
 
-        // Delete the base comment itself
         var comment = await _context.Comments.FindAsync(commentId);
         if (comment != null)
         {
@@ -280,5 +320,4 @@ public class PostsController : ControllerBase
 
         return deletedCount;
     }
-
 }
