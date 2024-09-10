@@ -99,6 +99,8 @@ builder.Services.AddSingleton<EmailService>();
 // Register the StoryExpirationService background service
 builder.Services.AddHostedService<StoryExpirationService>(); // Add this line
 
+builder.Services.AddScoped<SignatureService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
