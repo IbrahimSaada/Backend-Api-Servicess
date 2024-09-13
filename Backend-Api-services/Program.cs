@@ -88,8 +88,7 @@ builder.Services.AddSingleton<IEnvironmentSettings>(sp => new EnvironmentSetting
 {
     ShortName = "cookingApp-dev" // Set this to your specific environment's short name, e.g., "prod" or "dev"
 });
-// Register AWS SES client
-builder.Services.AddAWSService<IAmazonSimpleEmailService>();
+
 // Register AWS S3 client
 builder.Services.AddAWSService<IAmazonS3>();
 
