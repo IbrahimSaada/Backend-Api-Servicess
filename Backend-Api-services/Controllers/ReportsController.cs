@@ -1,24 +1,31 @@
 ﻿using Backend_Api_services.Models.Data;
 using Backend_Api_services.Models.DTOs;
 using Backend_Api_services.Models.Entities;
+using Backend_Api_services.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text;
 
 namespace Backend_Api_services.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]  // JWT Authorization applied to the entire controller
     public class ReportsController : ControllerBase
     {
         private readonly apiDbContext _context;
+        private readonly SignatureService _signatureService;
 
-        public ReportsController(apiDbContext context)
+        public ReportsController(apiDbContext context, SignatureService signatureService)
         {
             _context = context;
+            _signatureService = signatureService;
         }
 
         // GET: api/Reports
         [HttpGet]
+        [AllowAnonymous]  // Allow anonymous access to GET requests if needed
         public async Task<ActionResult<IEnumerable<ReportRequest>>> GetReports()
         {
             var reports = await _context.Reports
@@ -45,14 +52,27 @@ namespace Backend_Api_services.Controllers
             return Ok(reportDtos);
         }
 
+        // POST: api/Reports
         [HttpPost]
-        public async Task<ActionResult<ReportResponse>> CreateReport([FromBody] ReportResponse reportDto)   
+        public async Task<ActionResult<ReportResponse>> CreateReport([FromBody] ReportResponse reportDto)
         {
+            // Signature validation: Extract signature from the 'X-Signature' header (make sure this matches Flutter)
+            var signature = Request.Headers["X-Signature"].ToString();
+
+            // Data to sign: Combine critical fields (ReportedBy, ReportedUser, ContentId)
+            var dataToSign = $"ReportedBy={reportDto.ReportedBy}&ReportedUser={reportDto.ReportedUser}&ContentId={reportDto.ContentId}";
+
+            // Validate the signature
+            if (!_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid signature.");
+            }
+
             var report = new Reports
             {
                 reported_by = reportDto.ReportedBy,
                 reported_user = reportDto.ReportedUser,
-                content_type = reportDto.ContentType,  // Use the enum here
+                content_type = reportDto.ContentType,
                 content_id = reportDto.ContentId,
                 report_reason = reportDto.ReportReason,
                 resolution_details = reportDto.resolution_details,
