@@ -1,25 +1,43 @@
 ﻿using Backend_Api_services.Models.Entities;
 using Backend_Api_services.Models.DTOs;
+using Backend_Api_services.Services;
 using Microsoft.AspNetCore.Mvc;
 using Backend_Api_services.Models.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Backend_Api_services.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]  // Ensure JWT authorization is applied to all endpoints
     public class SharesController : ControllerBase
     {
         private readonly apiDbContext _context;
+        private readonly SignatureService _signatureService;
 
-        public SharesController(apiDbContext context)
+        public SharesController(apiDbContext context, SignatureService signatureService)
         {
             _context = context;
+            _signatureService = signatureService;
         }
 
+        // POST: api/Shares
         [HttpPost]
         public async Task<IActionResult> SharePost([FromBody] SharePostDto sharePostDto)
         {
+            // Validate the signature using relevant fields
+            string signature = Request.Headers["X-Signature"];
+            var dataToSign = $"{sharePostDto.UserId}:{sharePostDto.PostId}:{sharePostDto.Comment}";
+
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
@@ -44,10 +62,9 @@ namespace Backend_Api_services.Controllers
                 SharerId = sharePostDto.UserId,
                 PostId = sharePostDto.PostId,
                 SharedAt = DateTime.UtcNow,
-                Comment = sharePostDto.Comment // Handle the comment
+                Comment = sharePostDto.Comment
             };
 
-            // Add the new entry to the database
             _context.SharedPosts.Add(sharedPost);
             await _context.SaveChangesAsync();
 
@@ -58,6 +75,15 @@ namespace Backend_Api_services.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetSharedPost(int id)
         {
+            // Extract and validate the signature for the GET request using the id
+            string signature = Request.Headers["X-Signature"];
+            var dataToSign = $"{id}";
+
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             var sharedPost = await _context.SharedPosts
                 .Include(sp => sp.Sharedby)     // Include the user who shared the post
                 .Include(sp => sp.PostContent)  // Include the shared post content
@@ -103,6 +129,15 @@ namespace Backend_Api_services.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAllSharedPosts()
         {
+            // Extract and validate the signature for the GET request
+            string signature = Request.Headers["X-Signature"];
+            var dataToSign = "all";  // You could use something more meaningful if necessary
+
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             var sharedPosts = await _context.SharedPosts
                 .Include(sp => sp.Sharedby)     // Include the user who shared the post
                 .Include(sp => sp.PostContent)  // Include the shared post content
@@ -133,3 +168,4 @@ namespace Backend_Api_services.Controllers
         }
     }
 }
+ 
