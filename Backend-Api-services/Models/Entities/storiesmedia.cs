@@ -18,6 +18,7 @@ namespace Backend_Api_services.Models.Entities
         public string media_type { get; set; }
 
         public DateTime expiresat { get; set; } = DateTime.UtcNow.AddDays(1);
+        public DateTime createdat {  get; set; } = DateTime.UtcNow;
 
         [ForeignKey("story_id")]
         [JsonIgnore]  // Prevent cyclical references

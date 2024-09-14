@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Backend_Api_services.Controllers
 {
@@ -152,7 +153,8 @@ namespace Backend_Api_services.Controllers
                                  media_id = m.media_id,
                                  media_url = m.media_url,
                                  media_type = m.media_type,
-                                 expiresat = m.expiresat // Include expiresat for frontend reference
+                                 expiresat = m.expiresat,// Include expiresat for frontend reference
+                                 createdatforeachstory = m.createdat
                              }).ToList()
             }).Where(r => r.Media.Any()) // Only return stories that have at least one unexpired media item
             .ToList();
