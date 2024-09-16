@@ -1,29 +1,42 @@
 ﻿using Backend_Api_services.Models.Data;
 using Backend_Api_services.Models.DTOs;
 using Backend_Api_services.Models.Entities;
+using Backend_Api_services.Services; // Import SignatureService
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Backend_Api_services.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class StoriesController : ControllerBase
     {
         private readonly apiDbContext _context;
+        private readonly SignatureService _signatureService; // Inject SignatureService
 
-        public StoriesController(apiDbContext context)
+        public StoriesController(apiDbContext context, SignatureService signatureService)
         {
             _context = context;
+            _signatureService = signatureService; // Assign SignatureService
         }
 
         // POST: api/Stories
         [HttpPost]
         public async Task<IActionResult> PostStory([FromBody] StoriesRequest storyRequest)
         {
+            // Validate the signature from headers
+            string signature = Request.Headers["X-Signature"];
+            var dataToSign = $"{storyRequest.user_id}:{string.Join(",", storyRequest.Media.Select(m => m.media_url))}";
+
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
@@ -82,6 +95,15 @@ namespace Backend_Api_services.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetStory(int id)
         {
+            // Validate the signature from headers
+            string signature = Request.Headers["X-Signature"];
+            var dataToSign = $"{id}";
+
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             var story = await _context.Stories
                                       .Include(s => s.Media)
                                       .FirstOrDefaultAsync(s => s.story_id == id);
@@ -114,6 +136,15 @@ namespace Backend_Api_services.Controllers
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetStories(int userId)
         {
+            // Validate the signature from headers
+            string signature = Request.Headers["X-Signature"];
+            var dataToSign = $"{userId}";
+
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             // Optional: Check if the user exists to avoid unnecessary processing
             var userExists = await _context.users.AnyAsync(u => u.user_id == userId);
             if (!userExists)
@@ -166,6 +197,15 @@ namespace Backend_Api_services.Controllers
         [HttpPost("View")]
         public async Task<IActionResult> RecordStoryView([FromBody] StoryViewRequest viewRequest)
         {
+            // Validate the signature from headers
+            string signature = Request.Headers["X-Signature"];
+            var dataToSign = $"{viewRequest.story_id}:{viewRequest.viewer_id}";
+
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
@@ -216,6 +256,15 @@ namespace Backend_Api_services.Controllers
         [HttpGet("{storyId}/viewers")]
         public async Task<IActionResult> GetStoryViewers(int storyId)
         {
+            // Validate the signature from headers
+            string signature = Request.Headers["X-Signature"];
+            var dataToSign = $"{storyId}";
+
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             // Fetch all users who viewed the story
             var viewers = await _context.StoryViews
                                         .Where(v => v.story_id == storyId)
@@ -232,5 +281,46 @@ namespace Backend_Api_services.Controllers
             // Return the list of viewers
             return Ok(viewers);
         }
+
+        // DELETE: api/Stories/Media/{storyMediaId}/{userId}
+        [HttpDelete("Media/{storyMediaId}/{userId}")]
+        public async Task<IActionResult> DeleteStoryMedia(int storyMediaId, int userId)
+        {
+            // Validate the signature from headers
+            string signature = Request.Headers["X-Signature"];
+            var dataToSign = $"{storyMediaId}:{userId}";
+
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
+            // Fetch the story media from the database using the primary key
+            var storyMedia = await _context.StoriesMedia.FindAsync(storyMediaId);
+
+            // If story media is not found, return NotFound
+            if (storyMedia == null)
+            {
+                return NotFound("Story media not found.");
+            }
+
+            // Fetch the story that this media belongs to
+            var story = await _context.Stories.FindAsync(storyMedia.story_id);
+
+            // Check if the story belongs to the provided userId
+            if (story == null || story.user_id != userId)
+            {
+                return Forbid("You are not authorized to delete this story media.");
+            }
+
+            // Delete the story media
+            _context.StoriesMedia.Remove(storyMedia);
+
+            // Save changes to the database
+            await _context.SaveChangesAsync();
+
+            return Ok("Story media deleted successfully.");
+        }
+
     }
 }
