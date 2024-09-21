@@ -45,5 +45,6 @@ namespace Backend_Api_services.Models.Data
         public DbSet<stories> Stories { get; set; }
         public DbSet<storiesmedia> StoriesMedia { get; set; }
         public DbSet<storyviews> StoryViews { get; set; }
+        public DbSet<Bookmark> Bookmarks { get; set; }
     }
 }
