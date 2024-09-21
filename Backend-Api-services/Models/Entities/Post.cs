@@ -13,6 +13,9 @@ namespace Backend_Api_services.Models.Entities
         public DateTime created_at { get; set; }
         public bool is_public { get; set; } = true;
         public int like_count { get; set; } = 0;
+        public int bookmark_count { get; set; } = 0;
+        public int share_count {  get; set; } = 0;
+        public int report_count { get; set; } = 0;
         public int comment_count { get; set; } = 0;
 
         public List<PostMedia> Media { get; set; } = new List<PostMedia>();
