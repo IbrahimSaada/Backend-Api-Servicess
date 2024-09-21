@@ -64,7 +64,7 @@ namespace Backend_Api_services.Controllers
                 SharedAt = DateTime.UtcNow,
                 Comment = sharePostDto.Comment
             };
-
+            post.share_count++;
             _context.SharedPosts.Add(sharedPost);
             await _context.SaveChangesAsync();
 

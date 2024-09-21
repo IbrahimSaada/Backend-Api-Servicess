@@ -54,19 +54,20 @@ namespace Backend_Api_services.Controllers
 
         // POST: api/Reports
         [HttpPost]
+        [AllowAnonymous]
         public async Task<ActionResult<ReportResponse>> CreateReport([FromBody] ReportResponse reportDto)
         {
             // Signature validation: Extract signature from the 'X-Signature' header (make sure this matches Flutter)
-            var signature = Request.Headers["X-Signature"].ToString();
+            //var signature = Request.Headers["X-Signature"].ToString();
 
             // Data to sign: Combine critical fields (ReportedBy, ReportedUser, ContentId)
-            var dataToSign = $"ReportedBy={reportDto.ReportedBy}&ReportedUser={reportDto.ReportedUser}&ContentId={reportDto.ContentId}";
+            //var dataToSign = $"ReportedBy={reportDto.ReportedBy}&ReportedUser={reportDto.ReportedUser}&ContentId={reportDto.ContentId}";
 
             // Validate the signature
-            if (!_signatureService.ValidateSignature(signature, dataToSign))
-            {
-                return Unauthorized("Invalid signature.");
-            }
+           // if (!_signatureService.ValidateSignature(signature, dataToSign))
+            //{
+             //   return Unauthorized("Invalid signature.");
+           // }
 
             var report = new Reports
             {
@@ -77,7 +78,8 @@ namespace Backend_Api_services.Controllers
                 report_reason = reportDto.ReportReason,
                 resolution_details = reportDto.resolution_details,
             };
-
+            var post = await _context.Posts.FindAsync(reportDto.ContentId);
+            post.report_count++;
             _context.Reports.Add(report);
             await _context.SaveChangesAsync();
 
