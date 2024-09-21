@@ -320,4 +320,86 @@ public class PostsController : ControllerBase
 
         return deletedCount;
     }
+    // POST: api/Posts/Bookmark
+    [HttpPost("Bookmark")]
+    public async Task<IActionResult> BookmarkPost([FromBody] BookmarkRequest BookmarkRequest)
+    {
+         var signature = Request.Headers["X-Signature"].FirstOrDefault();
+         var dataToSign = $"{BookmarkRequest.user_id}:{BookmarkRequest.post_id}";
+
+         // Validate the signature
+         if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+         {
+           return Unauthorized("Invalid or missing signature.");
+         }
+
+        var postId = BookmarkRequest.post_id;
+        var userId = BookmarkRequest.user_id;
+
+        var post = await _context.Posts.FindAsync(postId);
+        if (post == null)
+        {
+            return NotFound("Post not found.");
+        }
+
+        var existingBookmark = await _context.Bookmarks
+            .FirstOrDefaultAsync(l => l.post_id == postId && l.user_id == userId);
+
+        if (existingBookmark != null)
+        {
+            return BadRequest("You have already bookmark this post.");
+        }
+
+        var bookmark = new Bookmark
+        {
+            post_id = postId,
+            user_id = userId
+        };
+
+        _context.Bookmarks.Add(bookmark);
+        post.bookmark_count++;
+
+        await _context.SaveChangesAsync();
+
+        return Ok("Post bookmarked successfully.");
+    }
+    // POST: api/Posts/Unbookmark
+    [HttpPost("Unbookmark")]
+    [AllowAnonymous]   
+    public async Task<IActionResult> UnbookmarkPost([FromBody] BookmarkRequest bookmarkRequest)
+    {
+        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        var dataToSign = $"{bookmarkRequest.user_id}:{bookmarkRequest.post_id}";
+
+         // Validate the signature
+        if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+        {
+            return Unauthorized("Invalid or missing signature.");
+        }
+
+        var postId = bookmarkRequest.post_id;
+        var userId = bookmarkRequest.user_id;
+
+        var post = await _context.Posts.FindAsync(postId);
+        if (post == null)
+        {
+            return NotFound("Post not found.");
+        }
+
+        var bookmark = await _context.Bookmarks
+            .FirstOrDefaultAsync(l => l.post_id == postId && l.user_id == userId);
+
+        if (bookmark == null)
+        {
+            return BadRequest("You have not bookmark this post.");
+        }
+
+        _context.Bookmarks.Remove(bookmark);
+        post.bookmark_count--;
+
+        await _context.SaveChangesAsync();
+
+        return Ok("Bookmark removed successfully.");
+    }
+
 }
