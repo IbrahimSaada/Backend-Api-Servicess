@@ -52,7 +52,8 @@ public class PostsController : ControllerBase
                 media_type = media.media_type,
                 post_id = media.post_id
             }).ToList(),
-            is_liked = _context.Likes.Any(like => like.post_id == post.post_id && like.user_id == userId)
+            is_liked = _context.Likes.Any(like => like.post_id == post.post_id && like.user_id == userId),
+            is_Bookmarked = _context.Bookmarks.Any(bookmark => bookmark.post_id == post.post_id && bookmark.user_id == userId)
         }).ToList();
 
         return Ok(postResponses);
@@ -364,8 +365,7 @@ public class PostsController : ControllerBase
         return Ok("Post bookmarked successfully.");
     }
     // POST: api/Posts/Unbookmark
-    [HttpPost("Unbookmark")]
-    [AllowAnonymous]   
+    [HttpPost("Unbookmark")] 
     public async Task<IActionResult> UnbookmarkPost([FromBody] BookmarkRequest bookmarkRequest)
     {
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
