@@ -39,10 +39,8 @@ using System.Linq;
                 profile_pic = u.profile_pic,
                 bio = u.bio,
                 phone_number = u.phone_number,
-                // Check if the searched user is following the current user
-                is_following = _context.Followers.Any(f => f.user_id == u.user_id && f.follower_user_id == currentUserId),
-                // Check if the current user is following the searched user
-                am_following = _context.Followers.Any(f => f.user_id == currentUserId && f.follower_user_id == u.user_id)
+                is_following = _context.Followers.Any(f => f.followed_user_id == currentUserId && f.follower_user_id == u.user_id),  // Check if the searched user (u.user_id) is following the current user (currentUserId)
+                am_following = _context.Followers.Any(f => f.followed_user_id == u.user_id && f.follower_user_id == currentUserId)  // Check if the current user (currentUserId) is following the searched user (u.user_id)
             })
             .ToList();
 
@@ -63,7 +61,7 @@ using System.Linq;
     public ActionResult FollowUser(FollowUserDto followUserDto)
     {
         // Check if both users exist in the database
-        var user = _context.users.FirstOrDefault(u => u.user_id == followUserDto.user_id);
+        var user = _context.users.FirstOrDefault(u => u.user_id == followUserDto.followed_user_id);
         var follower = _context.users.FirstOrDefault(u => u.user_id == followUserDto.follower_user_id);
 
         if (user == null || follower == null)
@@ -73,7 +71,7 @@ using System.Linq;
 
         // Check if the user is already following the other user
         var existingFollow = _context.Followers
-            .FirstOrDefault(f => f.user_id == followUserDto.user_id && f.follower_user_id == followUserDto.follower_user_id);
+            .FirstOrDefault(f => f.followed_user_id == followUserDto.followed_user_id && f.follower_user_id == followUserDto.follower_user_id);
 
         if (existingFollow != null)
         {
@@ -83,7 +81,7 @@ using System.Linq;
         // Create the follow record
         var follow = new Followers
         {
-            user_id = followUserDto.user_id,
+            followed_user_id = followUserDto.followed_user_id,
             follower_user_id = followUserDto.follower_user_id,
             is_public = followUserDto.is_public
         };
@@ -100,7 +98,7 @@ using System.Linq;
     {
         // Check if the following relationship exists
         var followRecord = _context.Followers
-            .FirstOrDefault(f => f.user_id == followUserDto.user_id && f.follower_user_id == followUserDto.follower_user_id);
+            .FirstOrDefault(f => f.followed_user_id == followUserDto.followed_user_id && f.follower_user_id == followUserDto.follower_user_id);
 
         if (followRecord == null)
         {
@@ -113,5 +111,54 @@ using System.Linq;
 
         return Ok("Unfollowed successfully.");
     }
+    // GET: api/Users/follower-requests
+    [HttpGet("follower-requests")]
+    public ActionResult<List<UserDto>> GetFollowerRequests(int currentUserId)
+    {
+        // Step 1: Get users who are following the current user (followed_user_id = currentUserId, and not dismissed)
+        var followers = _context.Followers
+            .Where(f => f.followed_user_id == currentUserId && !f.is_dismissed)  // Users following the current user, not dismissed
+            .Select(f => f.follower_user_id)  // Get their IDs (follower_user_id)
+            .ToList();
+
+        // Step 2: Get the user data for those followers and check if the current user has not followed them back
+        var pendingFollowers = _context.users
+            .Where(u => followers.Contains(u.user_id) &&
+                        !_context.Followers.Any(f => f.followed_user_id == u.user_id && f.follower_user_id == currentUserId))  // Check if the current user has NOT followed back
+            .Select(u => new UserDto
+            {
+                user_id = u.user_id,
+                fullname = u.fullname,
+                username = u.username,
+                profile_pic = u.profile_pic,
+                bio = u.bio,
+                phone_number = u.phone_number,
+                is_following = _context.Followers.Any(f => f.followed_user_id == currentUserId && f.follower_user_id == u.user_id),
+                am_following = _context.Followers.Any(f => f.followed_user_id == u.user_id && f.follower_user_id == currentUserId)
+            })
+            .ToList();
+
+        return Ok(pendingFollowers);
+    }
+    // POST: api/Users/cancel-follower-request
+    [HttpPost("cancel-follower-request")]
+    public ActionResult CancelFollowerRequest(FollowUserDto followUserDto)
+    {
+        // Find the follow relationship in the Followers table where the current user is being followed
+        var followRecord = _context.Followers
+            .FirstOrDefault(f => f.followed_user_id == followUserDto.followed_user_id && f.follower_user_id == followUserDto.follower_user_id);
+
+        if (followRecord == null)
+        {
+            return NotFound("No such follower request exists.");
+        }
+
+        // Mark the follow request as dismissed
+        followRecord.is_dismissed = true;
+        _context.SaveChanges();
+
+        return Ok("Follower request dismissed.");
+    }
+
 }
 
