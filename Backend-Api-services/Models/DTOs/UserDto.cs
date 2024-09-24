@@ -1,4 +1,6 @@
-﻿namespace Backend_Api_services.Models.DTOs
+﻿using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+
+namespace Backend_Api_services.Models.DTOs
 {
     public class UserDto
     {
@@ -10,5 +12,6 @@
         public string phone_number { get; set; } = "";
         public bool is_following { get; set; }
         public bool am_following { get; set; }
+        public bool is_dismissed { get; set; }
     }
 }
