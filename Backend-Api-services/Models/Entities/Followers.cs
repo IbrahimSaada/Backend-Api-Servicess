@@ -9,14 +9,16 @@ namespace Backend_Api_services.Models.Entities
         [Key]
         public int follower_id { get; set; }
 
-        public int user_id { get; set; }
+        public int followed_user_id { get; set; }
 
         public int follower_user_id { get; set; }
 
-        public bool is_public { get; set; }
+        public bool is_public { get; set; } = true;
+
+        public bool is_dismissed { get; set; } = false;
 
         // Foreign key relationship to the Users table
-        [ForeignKey("user_id")]
+        [ForeignKey("followed_user_id")]
         public Users User { get; set; }
 
         // Foreign key relationship to the Users table for the follower
