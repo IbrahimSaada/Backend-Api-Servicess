@@ -11,9 +11,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using Backend_Api_services.Services.Interfaces;
 using Backend_Api_services.BackgroundServices;
 using System.Text;
+using FirebaseAdmin;
+using Google.Apis.Auth.OAuth2;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -101,6 +102,16 @@ builder.Services.AddHostedService<StoryExpirationService>(); // Add this line
 builder.Services.AddScoped<SignatureService>();
 
 var app = builder.Build();
+
+// Path to your service account file in the Keys folder
+var serviceAccountPath = Path.Combine(Directory.GetCurrentDirectory(), "Keys", "cooktalk-cd05d-firebase-adminsdk-ela2u-a3aa2219b7.json");
+
+// Initialize Firebase using the service account key
+FirebaseApp.Create(new AppOptions
+{
+    Credential = GoogleCredential.FromFile(serviceAccountPath),
+});
+
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())

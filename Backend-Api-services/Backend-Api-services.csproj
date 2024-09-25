@@ -14,6 +14,7 @@
     <PackageReference Include="AWSSDK.S3" Version="3.7.400.2" />
     <PackageReference Include="AWSSDK.SimpleEmail" Version="3.7.400" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="FirebaseAdmin" Version="3.0.1" />
     <PackageReference Include="MailKit" Version="4.7.1.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.7" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.8">
