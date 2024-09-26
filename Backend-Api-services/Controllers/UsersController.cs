@@ -22,7 +22,6 @@ using Microsoft.AspNetCore.Authorization;
 
     // GET: api/Users/search?fullname=searchTerm&currentUserId=1&pageNumber=1&pageSize=10
     [HttpGet("search")]
-    [AllowAnonymous]
     public ActionResult SearchUsersByFullname(string fullname, int currentUserId, int pageNumber = 1, int pageSize = 10)
     {
         // Extract and validate the signature from the request header
@@ -84,7 +83,6 @@ using Microsoft.AspNetCore.Authorization;
 
     // POST: api/Users/follow
     [HttpPost("follow")]
-    [AllowAnonymous]
     public ActionResult FollowUser([FromBody] FollowUserDto followUserDto)
     {
         // Extract the signature from the request header
@@ -132,7 +130,6 @@ using Microsoft.AspNetCore.Authorization;
 
     // DELETE: api/Users/unfollow
     [HttpDelete("unfollow")]
-    [AllowAnonymous]
     public ActionResult UnfollowUser([FromBody] FollowUserDto followUserDto)
     {
         // Extract the signature from the request header
@@ -170,7 +167,6 @@ using Microsoft.AspNetCore.Authorization;
 
     // GET: api/Users/follower-requests
     [HttpGet("follower-requests")]
-    [AllowAnonymous]
     public ActionResult GetFollowerRequests(int currentUserId)
     {
         // Extract the signature from the request header
@@ -218,7 +214,6 @@ using Microsoft.AspNetCore.Authorization;
 
     // POST: api/Users/cancel-follower-request
     [HttpPost("cancel-follower-request")]
-    [AllowAnonymous]
     public ActionResult CancelFollowerRequest(FollowUserDto followUserDto)
     {
         // Extract the signature from the request header
@@ -231,18 +226,10 @@ using Microsoft.AspNetCore.Authorization;
             return Unauthorized("Invalid or missing signature.");
         }
 
-        // Validate input data
+        // Check if both user IDs are valid
         if (followUserDto.follower_user_id <= 0 || followUserDto.followed_user_id <= 0)
         {
             return BadRequest("Invalid user IDs provided.");
-        }
-
-        // Get the current user ID from the claims
-        var currentUserId = int.Parse(User.FindFirst("user_id")?.Value ?? "0");
-
-        if (currentUserId <= 0)
-        {
-            return Unauthorized("Invalid or missing user context.");
         }
 
         // Find the follow relationship in the Followers table where the current user is being followed
@@ -252,12 +239,6 @@ using Microsoft.AspNetCore.Authorization;
         if (followRecord == null)
         {
             return NotFound("No such follower request exists.");
-        }
-
-        // Ensure that the current user has the right to dismiss the request
-        if (followUserDto.followed_user_id != currentUserId)
-        {
-            return Forbid("You are not authorized to cancel this follower request.");
         }
 
         // Mark the follow request as dismissed
