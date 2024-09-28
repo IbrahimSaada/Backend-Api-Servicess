@@ -7,7 +7,7 @@
         public string Email { get; set; }
         public string ProfilePic { get; set; }
         public string Bio { get; set; }
-        public int Rating { get; set; }
+        public double Rating { get; set; }
         public string PhoneNumber { get; set; }
 
         private DateTime? _verifiedAt;
