@@ -26,7 +26,7 @@ public class Users
 
     public string qr_code { get; set; } = "";
 
-    public int rating { get; set; } = 0;
+    public double rating { get; set; } = 0;
 
     [Required]
     [Phone]

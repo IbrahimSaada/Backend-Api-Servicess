@@ -103,7 +103,8 @@ public class LoginController : ControllerBase
             Token = accessToken,
             RefreshToken = refreshToken,
             UserId = user.user_id,
-            Username = user.username
+            Username = user.username,
+            ProfilePic = user.profile_pic
         });
     }
 
