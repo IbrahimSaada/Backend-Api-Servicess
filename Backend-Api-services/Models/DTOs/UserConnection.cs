@@ -2,7 +2,7 @@
 
 namespace Backend_Api_services.Models.DTOs
 {
-    public class UserDto
+    public class UserConnection
     {
         public int user_id { get; set; }
         public string fullname { get; set; } = "";

@@ -10,11 +10,11 @@ using Microsoft.AspNetCore.Authorization;
     [Route("api/[controller]")]
     [ApiController]
     [Authorize]
-    public class UsersController : ControllerBase
+    public class UserConnectionsController : ControllerBase
     {
         private readonly apiDbContext _context;
     private readonly SignatureService _signatureService;
-    public UsersController(apiDbContext context, SignatureService signatureService)
+    public UserConnectionsController(apiDbContext context, SignatureService signatureService)
         {
             _context = context;
         _signatureService = signatureService;
@@ -55,7 +55,7 @@ using Microsoft.AspNetCore.Authorization;
         var users = query
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
-            .Select(u => new UserDto
+            .Select(u => new UserConnection
             {
                 user_id = u.user_id,
                 fullname = u.fullname,
@@ -195,7 +195,7 @@ using Microsoft.AspNetCore.Authorization;
         var pendingFollowers = _context.users
             .Where(u => followers.Contains(u.user_id) &&
                         !_context.Followers.Any(f => f.followed_user_id == u.user_id && f.follower_user_id == currentUserId))
-            .Select(u => new UserDto
+            .Select(u => new UserConnection
             {
                 user_id = u.user_id,
                 fullname = u.fullname,
