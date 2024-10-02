@@ -124,7 +124,8 @@ namespace Backend_Api_services.Controllers
                     media_id = media.media_id,
                     media_url = media.media_url,
                     media_type = media.media_type,
-                    post_id = media.post_id
+                    post_id = media.post_id,
+                    thumbnail_url = media.thumbnail_url
                 }).ToList(),
                 is_liked = _context.Likes.Any(like => like.post_id == post.post_id && like.user_id == userId),
                 is_Bookmarked = _context.Bookmarks.Any(bookmark => bookmark.post_id == post.post_id && bookmark.user_id == userId)
@@ -176,7 +177,8 @@ namespace Backend_Api_services.Controllers
                     media_id = media.media_id,
                     media_url = media.media_url,
                     media_type = media.media_type,
-                    post_id = media.post_id
+                    post_id = media.post_id,
+                    thumbnail_url = media.thumbnail_url
                 }).ToList(),
                 is_liked = _context.Likes.Any(like => like.post_id == bookmark.post.post_id && like.user_id == userId),
                 is_Bookmarked = true  // Since these are bookmarked posts, this is always true

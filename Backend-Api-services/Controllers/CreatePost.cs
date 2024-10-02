@@ -9,6 +9,10 @@ using System.Linq;
 using System.Security.Cryptography;  // For HMAC
 using System.Text;
 using System.Threading.Tasks;
+using Amazon.Lambda;
+using Amazon.Lambda.Model;
+using Amazon;
+using Amazon.Runtime;
 
 namespace Backend_Api_services.Controllers
 {
@@ -42,7 +46,7 @@ namespace Backend_Api_services.Controllers
                 return BadRequest("Invalid post data.");
             }
 
-            // Create the Post entity
+            // Step 1: Create the Post entity and save it to the database
             var newPost = new Post
             {
                 user_id = postRequest.user_id,
@@ -56,11 +60,10 @@ namespace Backend_Api_services.Controllers
                 }).ToList()
             };
 
-            // Add and save the new Post entity
             _context.Posts.Add(newPost);
             await _context.SaveChangesAsync();
 
-            // Create a response DTO
+            // Step 2: Create a response DTO to return to the client
             var postResponse = new PostResponse
             {
                 post_id = newPost.post_id,
@@ -79,7 +82,32 @@ namespace Backend_Api_services.Controllers
                 }).ToList()
             };
 
-            // Return the created Post as a response
+            // Step 3: Invoke Lambda to generate thumbnail using configuration settings
+            var awsAccessKey = _configuration["AWS:AccessKey"];
+            var awsSecretKey = _configuration["AWS:SecretKey"];
+            var awsRegion = _configuration["AWS:Region"];
+
+            var awsCredentials = new BasicAWSCredentials(awsAccessKey, awsSecretKey);
+            var lambdaConfig = new AmazonLambdaConfig { RegionEndpoint = RegionEndpoint.GetBySystemName(awsRegion) };
+
+            using (var lambdaClient = new AmazonLambdaClient(awsCredentials, lambdaConfig))
+            {
+                foreach (var media in newPost.Media)
+                {
+                    // Invoke Lambda function for each media item (if necessary)
+                    var lambdaRequest = new InvokeRequest
+                    {
+                        FunctionName = "GenerateThumbnails",  // Replace with your Lambda function name
+                        InvocationType = InvocationType.Event,    // Asynchronous invocation
+                        Payload = $"{{ \"media_id\": \"{media.media_id}\", \"media_url\": \"{media.media_url}\" }}"  // Pass media_id and media_url
+                    };
+
+                    var response = await lambdaClient.InvokeAsync(lambdaRequest);
+                    // Optional: Handle the response, log it if needed
+                }
+            }
+
+            // Step 4: Return the created post details to the client
             return CreatedAtAction(nameof(GetPost), new { id = newPost.post_id }, postResponse);
         }
 
@@ -141,5 +169,35 @@ namespace Backend_Api_services.Controllers
                 return computedSignature == receivedSignature;
             }
         }
+        [HttpPost("save-thumbnail-url")]
+        [AllowAnonymous]
+        public async Task<IActionResult> SaveThumbnailUrl([FromBody] ThumbnailDto request)
+        {
+            if (request == null || request.MediaId == 0 || string.IsNullOrEmpty(request.ThumbnailUrl))
+            {
+                return BadRequest("Invalid data.");
+            }
+
+            // Find the PostMedia record by media_id
+            var postMedia = await _context.PostMedias.FirstOrDefaultAsync(pm => pm.media_id == request.MediaId);
+            if (postMedia == null)
+            {
+                return NotFound("Media not found.");
+            }
+
+            // Update the PostMedia record with the thumbnail URL
+            postMedia.thumbnail_url = request.ThumbnailUrl;  // Assuming your entity has a 'thumbnail_url' column
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Thumbnail URL saved successfully." });
+        }
+
+        // DTO for receiving thumbnail URL updates
+        public class ThumbnailDto
+        {
+            public int MediaId { get; set; } // Ensure it's an integer
+            public string? ThumbnailUrl { get; set; } // Nullable string for thumbnail URL
+        }
+
     }
 }
