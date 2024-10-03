@@ -186,6 +186,34 @@ namespace Backend_Api_services.Controllers
 
             return Ok(postResponses);
         }
+        // GET: api/UserProfile/{profileId}/follow-status
+        [HttpGet("{profileId}/follow-status")]
+        public ActionResult CheckFollowStatus(int profileId, int currentUserId)
+        {
+            // Fetch the profile user
+            var profileUser = _context.users.FirstOrDefault(u => u.user_id == profileId);
+            if (profileUser == null)
+            {
+                return NotFound("Profile user not found.");
+            }
+
+            // Check if the current user is following the profile user
+            var isFollowing = _context.Followers.Any(f => f.follower_user_id == currentUserId && f.followed_user_id == profileId);
+
+            // Check if the profile user is following the current user
+            var amFollowing = _context.Followers.Any(f => f.follower_user_id == profileId && f.followed_user_id == currentUserId);
+
+            // Create the response DTO
+            var followStatusResponse = new FollowStatusResponse
+            {
+                IsFollowing = isFollowing,
+                AmFollowing = amFollowing
+            };
+
+            // Return the follow status
+            return Ok(followStatusResponse);
+        }
+
 
     }
 }
