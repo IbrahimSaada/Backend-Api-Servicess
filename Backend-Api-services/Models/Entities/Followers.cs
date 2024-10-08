@@ -13,7 +13,7 @@ namespace Backend_Api_services.Models.Entities
 
         public int follower_user_id { get; set; }
 
-        public bool is_public { get; set; } = true;
+        public string approval_status { get; set; } = "pending";
 
         public bool is_dismissed { get; set; } = false;
 

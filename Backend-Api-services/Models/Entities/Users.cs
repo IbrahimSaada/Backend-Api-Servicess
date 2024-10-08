@@ -42,4 +42,6 @@ public class Users
 
     [Required]
     public string fullname { get; set; } = "";
+
+    public bool is_public { get; set; } = true;
 }

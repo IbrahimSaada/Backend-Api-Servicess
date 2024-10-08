@@ -96,10 +96,10 @@ using Microsoft.AspNetCore.Authorization;
         }
 
         // Check if both users exist in the database
-        var user = _context.users.FirstOrDefault(u => u.user_id == followUserDto.followed_user_id);
-        var follower = _context.users.FirstOrDefault(u => u.user_id == followUserDto.follower_user_id);
+        var followedUser = _context.users.FirstOrDefault(u => u.user_id == followUserDto.followed_user_id);
+        var followerUser = _context.users.FirstOrDefault(u => u.user_id == followUserDto.follower_user_id);
 
-        if (user == null || follower == null)
+        if (followedUser == null || followerUser == null)
         {
             return BadRequest("User or follower not found.");
         }
@@ -113,18 +113,21 @@ using Microsoft.AspNetCore.Authorization;
             return BadRequest("You are already following this user.");
         }
 
+        // Determine approval status based on the is_public flag
+        var approvalStatus = followedUser.is_public ? "approved" : "pending";
+
         // Create the follow record
         var follow = new Followers
         {
             followed_user_id = followUserDto.followed_user_id,
             follower_user_id = followUserDto.follower_user_id,
-            is_public = followUserDto.is_public
+            approval_status = approvalStatus
         };
 
         _context.Followers.Add(follow);
         _context.SaveChanges();
 
-        return Ok("User followed successfully.");
+        return Ok($"Follow request {approvalStatus} successfully.");
     }
 
 
@@ -145,7 +148,7 @@ using Microsoft.AspNetCore.Authorization;
         // Input validation to ensure IDs are valid
         if (followUserDto.follower_user_id <= 0 || followUserDto.followed_user_id <= 0)
         {
-            return BadRequest("Invalid user IDs provided.");
+           return BadRequest("Invalid user IDs provided.");
         }
 
         // Check if the following relationship exists
@@ -220,7 +223,7 @@ using Microsoft.AspNetCore.Authorization;
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
         var dataToSign = $"{followUserDto.follower_user_id}:{followUserDto.followed_user_id}";
 
-        // Validate the signature
+         // Validate the signature
         if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
         {
             return Unauthorized("Invalid or missing signature.");
@@ -248,5 +251,96 @@ using Microsoft.AspNetCore.Authorization;
         return Ok("Follower request dismissed.");
     }
 
+    // PUT: api/Users/update-follower-status
+    [HttpPut("update-follower-status")]
+    public ActionResult UpdateFollowerStatus([FromBody] UpdateFollowStatusDto updateFollowStatusDto)
+    {
+        // Extract the signature from the request header
+        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        var dataToSign = $"{updateFollowStatusDto.follower_user_id}:{updateFollowStatusDto.followed_user_id}:{updateFollowStatusDto.approval_status}";
+
+        // Validate the signature
+        if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+        {
+            return Unauthorized("Invalid or missing signature.");
+        }
+
+        // Input validation to ensure IDs are valid
+        if (updateFollowStatusDto.follower_user_id <= 0 || updateFollowStatusDto.followed_user_id <= 0)
+        {
+            return BadRequest("Invalid user IDs provided.");
+        }
+
+        // Fetch the follow relationship
+        var followRecord = _context.Followers
+            .FirstOrDefault(f => f.followed_user_id == updateFollowStatusDto.followed_user_id && f.follower_user_id == updateFollowStatusDto.follower_user_id);
+
+        if (followRecord == null)
+        {
+            return NotFound("Follow relationship not found.");
+        }
+
+        // Validate the approval_status
+        var validStatuses = new[] { "approved", "pending", "declined" };
+        if (!validStatuses.Contains(updateFollowStatusDto.approval_status.ToLower()))
+        {
+            return BadRequest("Invalid approval status. Allowed values are: approved, pending, declined.");
+        }
+
+        // Only the followed user can approve or decline the request
+        var currentUserId = updateFollowStatusDto.followed_user_id; // Simulate the current user as the followed user
+        if (followRecord.followed_user_id != currentUserId)
+        {
+            return Forbid("You are not authorized to update the status of this follow request.");
+        }
+
+        // Update the approval status
+        followRecord.approval_status = updateFollowStatusDto.approval_status.ToLower();
+
+        // Save the changes
+        _context.SaveChanges();
+
+        return Ok($"Follow request {updateFollowStatusDto.approval_status} successfully.");
+    }
+
+    // GET: api/Users/pending-follow-requests
+    [HttpGet("pending-follow-requests")]
+    public ActionResult GetPendingFollowRequests(int currentUserId)
+    {
+        // Extract the signature from the request header
+        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        var dataToSign = $"{currentUserId}";
+
+         //Validate the signature
+        if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+        {
+            return Unauthorized("Invalid or missing signature.");
+        }
+
+        // Validate the input to ensure currentUserId is valid
+        if (currentUserId <= 0)
+        {
+            return BadRequest("Invalid user ID.");
+        }
+
+        // Fetch follow requests where the approval status is 'pending' and not dismissed
+        var pendingFollowers = _context.Followers
+            .Where(f => f.followed_user_id == currentUserId && f.approval_status == "pending")
+            .Select(f => new
+            {
+                f.follower_user_id,
+                f.Follower.fullname,       // Get the follower's fullname
+                f.Follower.profile_pic,    // Get the follower's profile picture
+                f.Follower.username
+            })
+            .ToList();
+
+        if (!pendingFollowers.Any())
+        {
+            return NotFound("No pending follow requests.");
+        }
+
+        return Ok(pendingFollowers);
+    }
 }
 
