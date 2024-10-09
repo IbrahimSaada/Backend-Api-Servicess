@@ -305,13 +305,14 @@ using Microsoft.AspNetCore.Authorization;
 
     // GET: api/Users/pending-follow-requests
     [HttpGet("pending-follow-requests")]
+    [AllowAnonymous]
     public ActionResult GetPendingFollowRequests(int currentUserId)
     {
         // Extract the signature from the request header
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
         var dataToSign = $"{currentUserId}";
 
-         //Validate the signature
+        // Validate the signature
         if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
         {
             return Unauthorized("Invalid or missing signature.");
@@ -335,11 +336,7 @@ using Microsoft.AspNetCore.Authorization;
             })
             .ToList();
 
-        if (!pendingFollowers.Any())
-        {
-            return NotFound("No pending follow requests.");
-        }
-
+        // Return a 200 OK response with an empty list if no pending followers are found
         return Ok(pendingFollowers);
     }
 }
