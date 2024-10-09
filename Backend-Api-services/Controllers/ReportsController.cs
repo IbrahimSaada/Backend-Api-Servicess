@@ -78,7 +78,10 @@ namespace Backend_Api_services.Controllers
                 resolution_details = reportDto.resolution_details,
             };
             var post = await _context.Posts.FindAsync(reportDto.ContentId);
-            post.report_count++;
+            if (post != null)
+            {
+                post.report_count++;
+            }
             _context.Reports.Add(report);
             await _context.SaveChangesAsync();
 
