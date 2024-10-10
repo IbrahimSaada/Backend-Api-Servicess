@@ -2,6 +2,9 @@
 using Backend_Api_services.Models.Data;
 using Backend_Api_services.Models.DTOs;
 using Microsoft.EntityFrameworkCore;
+using Backend_Api_services.Services;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Backend_Api_services.Controllers
 {
@@ -31,7 +34,7 @@ namespace Backend_Api_services.Controllers
             var followersCount = _context.Followers.Count(f => f.followed_user_id == id);
             var followingCount = _context.Followers.Count(f => f.follower_user_id == id);
             // Fetch post count
-             var postCount = _context.Posts.Count(p => p.user_id == id);
+            var postCount = _context.Posts.Count(p => p.user_id == id);
 
             // Create ProfileResponse DTO
             var profileResponse = new ProfileRepsone
@@ -213,7 +216,83 @@ namespace Backend_Api_services.Controllers
             // Return the follow status
             return Ok(followStatusResponse);
         }
+        [HttpGet("sharedposts/{currentUserId}")]
+        public async Task<IActionResult> GetSharedPostsForProfile(int currentUserId, int viewerUserId, int pageNumber = 1, int pageSize = 10)
+        {
+            // If the viewer (viewerUserId) is the same as the profile owner (currentUserId), show all posts
+            if (viewerUserId == currentUserId)
+            {
+                // The profile owner is viewing their own profile
+                return await GetSharedPostsForUser(currentUserId, pageNumber, pageSize);
+            }
 
+            // Retrieve the profile information of the profile owner (currentUserId)
+            var userProfile = await _context.users.FindAsync(currentUserId);
+            if (userProfile == null)
+            {
+                return NotFound("User profile not found.");
+            }
+
+            // If the profile is public, anyone can view the shared posts
+            if (userProfile.is_public)
+            {
+                return await GetSharedPostsForUser(currentUserId, pageNumber, pageSize);
+            }
+
+            // If the profile is private, check if the viewer (viewerUserId) is an approved follower
+            var follower = await _context.Followers
+                .FirstOrDefaultAsync(f => f.followed_user_id == currentUserId && f.follower_user_id == viewerUserId && f.approval_status == "approved");
+
+            if (follower == null)
+            {
+                // Viewer is not allowed to see the profile owner's shared posts
+                return StatusCode(403, "You are not allowed to view this user's shared posts.");
+            }
+
+            // The viewer is an approved follower, so they can view the shared posts
+            return await GetSharedPostsForUser(currentUserId, pageNumber, pageSize);
+        }
+
+        // Helper method to get shared posts for a specific user with pagination
+        private async Task<IActionResult> GetSharedPostsForUser(int userId, int pageNumber, int pageSize)
+        {
+            var sharedPosts = await _context.SharedPosts
+                .Where(sp => sp.SharerId == userId)  // Filter by the provided user ID
+                .Include(sp => sp.Sharedby)           // Include the user who shared the post
+                .Include(sp => sp.PostContent)        // Include the shared post content
+                .ThenInclude(p => p.User)             // Ensure the User related to the Post is loaded
+                .Include(sp => sp.PostContent.Media)  // Include the media associated with the post
+                .Skip((pageNumber - 1) * pageSize)    // Skip the posts for previous pages
+                .Take(pageSize)                       // Take the posts for the current page
+                .ToListAsync();
+
+            if (sharedPosts == null || !sharedPosts.Any())
+            {
+                return NotFound("No shared posts found for this user.");
+            }
+
+            var sharedPostDetailsDtos = sharedPosts.Select(sharedPost => new SharedPostDetailsDto
+            {
+                ShareId = sharedPost.ShareId,
+                SharerId = sharedPost.SharerId,
+                SharerUsername = sharedPost.Sharedby.fullname,
+                SharerProfileUrl = sharedPost.Sharedby?.profile_pic,
+                PostId = sharedPost.PostId,
+                PostContent = sharedPost.PostContent.caption,
+                PostCreatedAt = sharedPost.PostContent.created_at,
+                Media = sharedPost.PostContent.Media.Select(pm => new PostMediaDto
+                {
+                    MediaUrl = pm.media_url,
+                    MediaType = pm.media_type,
+                    ThumbnailUrl = pm.thumbnail_url // Include thumbnail for video posts
+                }).ToList(),
+                SharedAt = sharedPost.SharedAt,
+                Comment = sharedPost.Comment,
+                OriginalPostUserUrl = sharedPost.PostContent?.User?.profile_pic
+            }).ToList();
+
+            return Ok(sharedPostDetailsDtos);
+        }
 
     }
 }
