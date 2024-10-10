@@ -24,5 +24,6 @@
     {
         public string MediaUrl { get; set; }  // The URL of the media
         public string MediaType { get; set; }  // The type of media (e.g., image, video)
+        public string ThumbnailUrl { get; set; }
     }
 }
