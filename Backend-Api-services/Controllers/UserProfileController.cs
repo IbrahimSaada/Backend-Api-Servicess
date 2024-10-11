@@ -88,7 +88,7 @@ namespace Backend_Api_services.Controllers
             return Ok("Profile updated successfully.");
         }
         // GET: api/Posts
-        [HttpGet]
+        [HttpGet("userposts")]
         public async Task<ActionResult<IEnumerable<PostResponse>>> GetUserPostsById(int userId, int viewerUserId, int pageNumber = 1, int pageSize = 10)
         {
             // Validate input parameters
