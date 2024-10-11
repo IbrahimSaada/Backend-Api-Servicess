@@ -18,6 +18,17 @@
         public string? Comment { get; set; }  // Optional comment added by the sharer
 
         public string OriginalPostUserUrl { get; set; }  // The profile URL of the original post's author
+        //for user profile
+        public string OriginalPostFullName { get; set; }
+
+        public int like_count { get; set; }
+
+        public int comment_count { get; set; }
+
+        public bool is_liked { get; set; }
+
+        public bool is_Bookmarked { get; set; }
+        //for user profile
     }
 
     public class PostMediaDto

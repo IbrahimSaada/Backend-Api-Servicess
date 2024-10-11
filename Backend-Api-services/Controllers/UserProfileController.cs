@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using Backend_Api_services.Services;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Backend_Api_services.Models.Entities;
+using Microsoft.Extensions.Hosting;
 
 namespace Backend_Api_services.Controllers
 {
@@ -87,7 +89,7 @@ namespace Backend_Api_services.Controllers
         }
         // GET: api/Posts
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<PostResponse>>> GetUserPostsById(int userId, int pageNumber = 1, int pageSize = 10)
+        public async Task<ActionResult<IEnumerable<PostResponse>>> GetUserPostsById(int userId, int viewerUserId, int pageNumber = 1, int pageSize = 10)
         {
             // Validate input parameters
             if (pageNumber <= 0 || pageSize <= 0)
@@ -95,20 +97,54 @@ namespace Backend_Api_services.Controllers
                 return BadRequest("Page number and page size must be greater than zero.");
             }
 
-            // Fetch the total number of posts for the user
-            var totalPosts = await _context.Posts
-                                           .Where(p => p.user_id == userId && p.is_public)
-                                           .CountAsync();
+            // Fetch the profile information for the user being viewed
+            var userProfile = await _context.users.FindAsync(userId);
+            if (userProfile == null)
+            {
+                return NotFound("User profile not found.");
+            }
 
-            // Fetch posts that belong to the user with userId and are public, with pagination
-            var posts = await _context.Posts
-                                      .Include(p => p.User)
-                                      .Include(p => p.Media)
-                                      .Where(p => p.user_id == userId && p.is_public)
-                                      .OrderByDescending(p => p.created_at)
-                                      .Skip((pageNumber - 1) * pageSize)  // Skip previous pages
-                                      .Take(pageSize)  // Take the current page size
-                                      .ToListAsync();
+            // Determine if the viewer is checking their own profile
+            bool isOwner = (viewerUserId == userId);
+
+            // Determine the visibility of posts based on profile privacy and follower approval
+            bool isApprovedFollower = false;
+
+            if (!isOwner && !userProfile.is_public)
+            {
+                // Check if the viewer is an approved follower for private profiles
+                isApprovedFollower = await _context.Followers
+                    .AnyAsync(f => f.followed_user_id == userId && f.follower_user_id == viewerUserId && f.approval_status == "approved");
+
+                if (!isApprovedFollower)
+                {
+                    return StatusCode(403, "You are not allowed to view this user's private posts.");
+                }
+            }
+
+            // Fetch the total number of posts for the user, considering visibility
+            var totalPostsQuery = _context.Posts.Where(p => p.user_id == userId);
+
+            if (!isOwner)
+            {
+                // If the viewer is not the owner, limit to public posts if the profile is public
+                if (userProfile.is_public)
+                {
+                    totalPostsQuery = totalPostsQuery.Where(p => p.is_public);
+                }
+            }
+
+            var totalPosts = await totalPostsQuery.CountAsync();
+
+            // Fetch the posts with pagination
+            var postsQuery = totalPostsQuery
+                .Include(p => p.User)
+                .Include(p => p.Media)
+                .OrderByDescending(p => p.created_at)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize);
+
+            var posts = await postsQuery.ToListAsync();
 
             // Map the posts to the PostResponse DTO
             var postResponses = posts.Select(post => new PostResponse
@@ -130,14 +166,14 @@ namespace Backend_Api_services.Controllers
                     post_id = media.post_id,
                     thumbnail_url = media.thumbnail_url
                 }).ToList(),
-                is_liked = _context.Likes.Any(like => like.post_id == post.post_id && like.user_id == userId),
-                is_Bookmarked = _context.Bookmarks.Any(bookmark => bookmark.post_id == post.post_id && bookmark.user_id == userId)
+                is_liked = _context.Likes.Any(like => like.post_id == post.post_id && like.user_id == viewerUserId),
+                is_Bookmarked = _context.Bookmarks.Any(bookmark => bookmark.post_id == post.post_id && bookmark.user_id == viewerUserId)
             }).ToList();
 
-
-            // Return the list of posts that belong to the user
+            // Return the list of posts for the user
             return Ok(postResponses);
         }
+
         [HttpGet("bookmarked")]
         public async Task<ActionResult<IEnumerable<PostResponse>>> GetBookmarkedPostsByUserId(int userId, int pageNumber = 1, int pageSize = 10)
         {
@@ -288,7 +324,12 @@ namespace Backend_Api_services.Controllers
                 }).ToList(),
                 SharedAt = sharedPost.SharedAt,
                 Comment = sharedPost.Comment,
-                OriginalPostUserUrl = sharedPost.PostContent?.User?.profile_pic
+                OriginalPostUserUrl = sharedPost.PostContent?.User?.profile_pic,
+                OriginalPostFullName = sharedPost.PostContent.User.fullname,
+                like_count = sharedPost.PostContent.like_count,
+                comment_count = sharedPost.PostContent.comment_count,
+                is_liked = _context.Likes.Any(like => like.post_id == sharedPost.PostId && like.user_id == userId),
+                is_Bookmarked = _context.Bookmarks.Any(bookmark => bookmark.post_id == sharedPost.PostId && bookmark.user_id == userId)
             }).ToList();
 
             return Ok(sharedPostDetailsDtos);
