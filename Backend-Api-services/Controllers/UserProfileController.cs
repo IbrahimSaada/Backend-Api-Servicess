@@ -127,14 +127,20 @@ namespace Backend_Api_services.Controllers
 
             if (!isOwner)
             {
-                // If the viewer is not the owner, limit to public posts if the profile is public
-                if (userProfile.is_public)
+                // If the viewer is not the owner, limit to public posts if not an approved follower
+                if (!isApprovedFollower)
                 {
                     totalPostsQuery = totalPostsQuery.Where(p => p.is_public);
                 }
             }
 
             var totalPosts = await totalPostsQuery.CountAsync();
+
+            // If no posts are found, return a message
+            if (totalPosts == 0)
+            {
+                return StatusCode(204);  // No content, meaning there are no posts
+            }
 
             // Fetch the posts with pagination
             var postsQuery = totalPostsQuery
@@ -173,6 +179,7 @@ namespace Backend_Api_services.Controllers
             // Return the list of posts for the user
             return Ok(postResponses);
         }
+
 
         [HttpGet("bookmarked")]
         public async Task<ActionResult<IEnumerable<PostResponse>>> GetBookmarkedPostsByUserId(int userId, int pageNumber = 1, int pageSize = 10)
@@ -335,6 +342,180 @@ namespace Backend_Api_services.Controllers
             return Ok(sharedPostDetailsDtos);
         }
 
+        [HttpGet("{userId}/followers/{viewerUserId}")]
+        public async Task<ActionResult<IEnumerable<FollowerResponse>>> GetFollowers(int userId, int viewerUserId, string search = "", int pageNumber = 1, int pageSize = 10)
+        {
+            // Validate input parameters
+            if (pageNumber <= 0 || pageSize <= 0)
+            {
+                return BadRequest("Page number and page size must be greater than zero.");
+            }
+
+            // Validate the user exists
+            var user = await _context.users.FindAsync(userId);
+            if (user == null)
+            {
+                return NotFound("User not found.");
+            }
+
+            // Check if the user allows public viewing of followers
+            if (!user.isFollowersPublic && viewerUserId != userId)
+            {
+                return StatusCode(403, "The followers list is private.");
+            }
+
+            // Convert search term to lowercase for case-insensitive search
+            search = search?.ToLower() ?? "";
+
+            // Fetch the total number of followers for the user, filtered by the case-insensitive search term
+            var totalFollowers = await _context.Followers
+                .Where(f => f.followed_user_id == userId &&
+                            (string.IsNullOrEmpty(search) || f.Follower.fullname.ToLower().Contains(search)))
+                .CountAsync();
+
+            // Fetch the followers with pagination and case-insensitive search
+            var followers = await _context.Followers
+                .Where(f => f.followed_user_id == userId &&
+                            (string.IsNullOrEmpty(search) || f.Follower.fullname.ToLower().Contains(search)))
+                .Select(f => new FollowerResponse
+                {
+                    FollowerId = f.follower_user_id,
+                    FullName = f.Follower.fullname,  // Filtered by the search term
+                    ProfilePic = f.Follower.profile_pic,
+                })
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            // Return the paginated followers with metadata
+            var response = new
+            {
+                TotalFollowers = totalFollowers,
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                Followers = followers
+            };
+
+            return Ok(response);
+        }
+
+
+        [HttpGet("{userId}/following/{viewerUserId}")]
+        public async Task<ActionResult<IEnumerable<FollowingResponse>>> GetFollowing(int userId, int viewerUserId, string search = "", int pageNumber = 1, int pageSize = 10)
+        {
+            // Validate input parameters
+            if (pageNumber <= 0 || pageSize <= 0)
+            {
+                return BadRequest("Page number and page size must be greater than zero.");
+            }
+
+            // Validate the user exists
+            var user = await _context.users.FindAsync(userId);
+            if (user == null)
+            {
+                return NotFound("User not found.");
+            }
+
+            // Check if the user allows public viewing of following list
+            if (!user.isFollowingPublic && viewerUserId != userId)
+            {
+                return StatusCode(403, "The following list is private.");
+            }
+
+            // Convert search term to lowercase for case-insensitive search
+            search = search?.ToLower() ?? "";
+
+            // Fetch the total number of users that this user is following, filtered by the case-insensitive search term
+            var totalFollowing = await _context.Followers
+                .Where(f => f.follower_user_id == userId &&
+                            (string.IsNullOrEmpty(search) || f.User.fullname.ToLower().Contains(search)))
+                .CountAsync();
+
+            // Fetch the following users with pagination and case-insensitive search
+            var following = await _context.Followers
+                .Where(f => f.follower_user_id == userId &&
+                            (string.IsNullOrEmpty(search) || f.User.fullname.ToLower().Contains(search)))
+                .Select(f => new FollowingResponse
+                {
+                    FollowedUserId = f.followed_user_id,
+                    FullName = f.User.fullname,  // Filtered by the search term
+                    ProfilePic = f.User.profile_pic,
+                })
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            // Return the paginated following list with metadata
+            var response = new
+            {
+                TotalFollowing = totalFollowing,
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                Following = following
+            };
+
+            return Ok(response);
+        }
+        [HttpPut("change-privacy")]
+        public async Task<IActionResult> ChangeAllPrivacySettings(int userId, bool? isPublic = null, bool? isFollowersPublic = null, bool? isFollowingPublic = null)
+        {
+            // Fetch the user profile by userId
+            var userProfile = await _context.users.FindAsync(userId);
+            if (userProfile == null)
+            {
+                return NotFound("User profile not found.");
+            }
+
+            // Update the user's privacy settings only if the corresponding parameters are provided
+            if (isPublic.HasValue)
+            {
+                userProfile.is_public = isPublic.Value;
+            }
+
+            if (isFollowersPublic.HasValue)
+            {
+                userProfile.isFollowersPublic = isFollowersPublic.Value;
+            }
+
+            if (isFollowingPublic.HasValue)
+            {
+                userProfile.isFollowingPublic = isFollowingPublic.Value;
+            }
+
+            // Save changes to the database
+            try
+            {
+                await _context.SaveChangesAsync();
+                return Ok(new { message = "Privacy settings updated successfully." });
+            }
+            catch (Exception ex)
+            {
+                // Log or handle the error
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
+
+        [HttpGet("check-privacy/{userId}")]
+        public async Task<IActionResult> CheckProfilePrivacy(int userId)
+        {
+            // Fetch the user profile by userId
+            var userProfile = await _context.users.FindAsync(userId);
+            if (userProfile == null)
+            {
+                return NotFound("User profile not found.");
+            }
+
+            // Return the privacy status for the profile
+            return Ok(new
+            {
+                isPublic = userProfile.is_public,
+                isFollowersPublic = userProfile.isFollowersPublic,  // Include followers privacy
+                isFollowingPublic = userProfile.isFollowingPublic   // Include following privacy
+            });
+        }
+
+
     }
+
 }
 

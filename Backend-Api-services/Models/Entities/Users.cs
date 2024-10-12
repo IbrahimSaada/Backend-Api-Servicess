@@ -44,4 +44,6 @@ public class Users
     public string fullname { get; set; } = "";
 
     public bool is_public { get; set; } = true;
+    public bool isFollowersPublic { get; set; } = true;  // Default to public
+    public bool isFollowingPublic { get; set; } = true;  // Default to public
 }
