@@ -1,12 +1,19 @@
-﻿using Backend_Api_services.Models.Data;
+﻿using Backend_Api_services;
+using Backend_Api_services.Models.Data;
 using Backend_Api_services.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using QRCoder;
 using System;
+using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Amazon.S3;
+using Microsoft.AspNetCore.Http;
+using Backend_Api_services.Services.Interfaces;
 
 [Route("api/[controller]")]
 [ApiController]
@@ -15,12 +22,16 @@ public class RegistrationController : ControllerBase
     private readonly apiDbContext _context;
     private readonly ILogger<RegistrationController> _logger;
     private readonly EmailService _emailService;
+    private readonly IFileService _fileService; // Use the file service
+    private readonly IQRCodeService _qrCodeService; // QR Code Service
 
-    public RegistrationController(apiDbContext context, ILogger<RegistrationController> logger, EmailService emailService)
+    public RegistrationController(apiDbContext context, ILogger<RegistrationController> logger, EmailService emailService, IFileService fileService, IQRCodeService qrCodeService)
     {
         _context = context;
         _logger = logger;
         _emailService = emailService;
+        _fileService = fileService;
+        _qrCodeService = qrCodeService;
     }
 
     [HttpGet]
@@ -96,6 +107,17 @@ public class RegistrationController : ControllerBase
 
         _logger.LogInformation("User registered successfully with ID: {UserId}", user.user_id);
 
+        // Generate QR code after user registration
+        var qrCodeResult = await GenerateQRCodeForUser(user.user_id);
+        if (qrCodeResult is OkObjectResult)
+        {
+            _logger.LogInformation("QR code successfully generated for user ID: {UserId}", user.user_id);
+        }
+        else
+        {
+            _logger.LogWarning("Failed to generate QR code for user ID: {UserId}", user.user_id);
+        }
+
         string emailBody = $"Your verification code is {user.verification_code}";
         await _emailService.SendEmailAsync(user.email, "Verification Code", emailBody);
 
@@ -168,6 +190,43 @@ public class RegistrationController : ControllerBase
         Random random = new Random();
         return random.Next(100000, 999999).ToString();
     }
+    [HttpPost("generate-qr/{userId}")]
+    public async Task<IActionResult> GenerateQRCodeForUser(int userId)
+    {
+        var user = await _context.users.FindAsync(userId);
+        if (user == null)
+        {
+            return NotFound("User not found.");
+        }
+
+        // Generate the QR code in base64
+        var qrCodeText = $"https://yourapp.com/profile/{user.user_id}";
+        var qrCodeBase64 = _qrCodeService.GenerateQRCodeBase64(qrCodeText);
+
+        // Convert base64 to byte array for uploading
+        byte[] qrCodeBinary = Convert.FromBase64String(qrCodeBase64);
+        using (var stream = new MemoryStream(qrCodeBinary))
+        {
+            var file = new FormFile(stream, 0, stream.Length, null, $"{user.username}-qrcode.png")
+            {
+                Headers = new HeaderDictionary(),
+                ContentType = "image/png"
+            };
+
+            string bucketName = "homepagecooking";
+            string qrCodeFolder = "qrcode";
+
+            // Upload the QR code to S3 using the IFileService
+            var s3Url = await _fileService.UploadFileAsync(file, bucketName, qrCodeFolder);
+
+            user.qr_code = s3Url;
+            await _context.SaveChangesAsync();
+
+            return Ok($"QR code generated and uploaded to S3: {s3Url}");
+        }
+
+    }
+
 
     private string GenerateUniqueUsername(string email)
     {

@@ -101,6 +101,10 @@ builder.Services.AddHostedService<StoryExpirationService>(); // Add this line
 
 builder.Services.AddScoped<SignatureService>();
 
+builder.Services.AddTransient<IQRCodeService, QRCodeService>();
+
+builder.Services.AddScoped<IFileService, FileService>();
+
 var app = builder.Build();
 
 // Path to your service account file in the Keys folder
