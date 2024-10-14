@@ -7,6 +7,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Backend_Api_services.Models.Entities;
 using Microsoft.Extensions.Hosting;
+using System.Text.RegularExpressions;
 
 namespace Backend_Api_services.Controllers
 {
@@ -514,6 +515,43 @@ namespace Backend_Api_services.Controllers
             });
         }
 
+        [HttpPost("{id}/change-password")]
+        public async Task<IActionResult> ChangePassword(int id, [FromBody] ChangePasswordRequestDto changePasswordDto)
+        {
+            // Fetch the user by ID
+            var user = await _context.users.FirstOrDefaultAsync(u => u.user_id == id);
+            if (user == null)
+            {
+                return NotFound("User not found.");
+            }
+
+            // Verify the old password (plain text comparison)
+            if (changePasswordDto.OldPassword != user.password)
+            {
+                // Return specific error for incorrect old password
+                return BadRequest(new { error = "Old password is incorrect." });
+            }
+
+            // Validate the new password using the IsValidPassword method
+            if (!IsValidPassword(changePasswordDto.NewPassword))
+            {
+                // Return specific error for invalid new password complexity
+                return BadRequest(new { error = "New password must be at least 8 characters long and include a mix of uppercase, lowercase, numbers, and special characters." });
+            }
+
+            // Update the user's password with the new password
+            user.password = changePasswordDto.NewPassword;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Password changed successfully." });
+        }
+
+        // Helper method to validate password complexity
+        private bool IsValidPassword(string password)
+        {
+            var passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$";
+            return Regex.IsMatch(password, passwordPattern);
+        }
 
     }
 
