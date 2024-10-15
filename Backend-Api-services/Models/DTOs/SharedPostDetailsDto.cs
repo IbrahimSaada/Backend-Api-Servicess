@@ -21,6 +21,8 @@
         //for user profile
         public string OriginalPostFullName { get; set; }
 
+        public int OriginalPostUserId { get; set; }
+
         public int like_count { get; set; }
 
         public int comment_count { get; set; }

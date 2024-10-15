@@ -334,6 +334,7 @@ namespace Backend_Api_services.Controllers
                 Comment = sharedPost.Comment,
                 OriginalPostUserUrl = sharedPost.PostContent?.User?.profile_pic,
                 OriginalPostFullName = sharedPost.PostContent.User.fullname,
+                OriginalPostUserId = sharedPost.PostContent.User.user_id,
                 like_count = sharedPost.PostContent.like_count,
                 comment_count = sharedPost.PostContent.comment_count,
                 is_liked = _context.Likes.Any(like => like.post_id == sharedPost.PostId && like.user_id == userId),
@@ -551,6 +552,66 @@ namespace Backend_Api_services.Controllers
         {
             var passwordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$";
             return Regex.IsMatch(password, passwordPattern);
+        }
+
+        [HttpDelete("delete-post/{postId}")]
+        public async Task<IActionResult> DeletePost(int postId, int userId)
+        {
+            var post = await _context.Posts.FirstOrDefaultAsync(p => p.post_id == postId && p.user_id == userId);
+            if (post == null)
+            {
+                return NotFound("Post not found or you do not have permission to delete this post.");
+            }
+
+            _context.Posts.Remove(post);
+            await _context.SaveChangesAsync();
+
+            return Ok("Post deleted successfully.");
+        }
+
+        [HttpPut("edit-post/{postId}")]
+        public async Task<IActionResult> EditPostCaption(int postId, [FromBody] string newCaption, int userId)
+        {
+            var post = await _context.Posts.FirstOrDefaultAsync(p => p.post_id == postId && p.user_id == userId);
+            if (post == null)
+            {
+                return NotFound("Post not found or you do not have permission to edit this post.");
+            }
+
+            post.caption = newCaption;
+            await _context.SaveChangesAsync();
+
+            return Ok("Post caption updated successfully.");
+        }
+
+        [HttpDelete("delete-shared-post/{sharedPostId}")]
+        public async Task<IActionResult> DeleteSharedPost(int sharedPostId, int userId)
+        {
+            var sharedPost = await _context.SharedPosts.FirstOrDefaultAsync(sp => sp.ShareId == sharedPostId && sp.SharerId == userId);
+            if (sharedPost == null)
+            {
+                return NotFound("Shared post not found or you do not have permission to delete this shared post.");
+            }
+
+            _context.SharedPosts.Remove(sharedPost);
+            await _context.SaveChangesAsync();
+
+            return Ok("Shared post deleted successfully.");
+        }
+
+        [HttpPut("edit-shared-post/{sharedPostId}")]
+        public async Task<IActionResult> EditSharedPostComment(int sharedPostId, [FromBody] string newComment, int userId)
+        {
+            var sharedPost = await _context.SharedPosts.FirstOrDefaultAsync(sp => sp.ShareId == sharedPostId && sp.SharerId == userId);
+            if (sharedPost == null)
+            {
+                return NotFound("Shared post not found or you do not have permission to edit this shared post.");
+            }
+
+            sharedPost.Comment = newComment;
+            await _context.SaveChangesAsync();
+
+            return Ok("Shared post comment updated successfully.");
         }
 
     }
