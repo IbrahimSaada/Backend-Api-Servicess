@@ -200,7 +200,7 @@ public class RegistrationController : ControllerBase
         }
 
         // Generate the QR code in base64
-        var qrCodeText = $"https://yourapp.com/profile/{user.user_id}";
+        var qrCodeText = $"cooktalk://profile/{user.user_id}";
         var qrCodeBase64 = _qrCodeService.GenerateQRCodeBase64(qrCodeText);
 
         // Convert base64 to byte array for uploading

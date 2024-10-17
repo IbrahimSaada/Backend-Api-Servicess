@@ -8,24 +8,38 @@ using Microsoft.AspNetCore.Authorization;
 using Backend_Api_services.Models.Entities;
 using Microsoft.Extensions.Hosting;
 using System.Text.RegularExpressions;
+using System.Text;
 
 namespace Backend_Api_services.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class UserProfileController : ControllerBase
     {
         private readonly apiDbContext _context;
+        private readonly SignatureService _signatureService;
 
-        public UserProfileController(apiDbContext context)
+        public UserProfileController(apiDbContext context, SignatureService signatureService)
         {
             _context = context;
+            _signatureService = signatureService;
         }
 
         // GET: api/UserProfile/{id}
         [HttpGet("{id}")]
         public ActionResult GetUserProfileById(int id)
         {
+            // Extract the signature from the request header
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            var dataToSign = $"{id}"; // Data to sign is simply the user ID in this case
+
+            // Validate the signature
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             // Fetch user data from Users table
             var user = _context.users.FirstOrDefault(u => u.user_id == id);
             if (user == null)
@@ -36,6 +50,7 @@ namespace Backend_Api_services.Controllers
             // Fetch number of followers and following count
             var followersCount = _context.Followers.Count(f => f.followed_user_id == id);
             var followingCount = _context.Followers.Count(f => f.follower_user_id == id);
+
             // Fetch post count
             var postCount = _context.Posts.Count(p => p.user_id == id);
 
@@ -60,6 +75,39 @@ namespace Backend_Api_services.Controllers
         [HttpPost("{id}/edit")]
         public ActionResult UpdateUserProfile(int id, [FromBody] ProfileUpdateRequestDto profileUpdate)
         {
+            // Ensure profileUpdate is not null
+            if (profileUpdate == null)
+            {
+                return BadRequest("Invalid profile update request.");
+            }
+
+            // Extract the signature from the headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+
+            // Dynamically build the dataToSign based on which fields are provided
+            var dataToSign = $"{id}";  // Start with ID
+
+            if (!string.IsNullOrEmpty(profileUpdate.fullname))
+            {
+                dataToSign += $":{profileUpdate.fullname}";
+            }
+
+            if (!string.IsNullOrEmpty(profileUpdate.profile_pic))
+            {
+                dataToSign += $":{profileUpdate.profile_pic}";
+            }
+
+            if (!string.IsNullOrEmpty(profileUpdate.bio))
+            {
+                dataToSign += $":{profileUpdate.bio}";
+            }
+
+            // Validate the signature using the dynamically constructed dataToSign
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             // Fetch the user by ID
             var user = _context.users.FirstOrDefault(u => u.user_id == id);
             if (user == null)
@@ -67,7 +115,7 @@ namespace Backend_Api_services.Controllers
                 return NotFound("User not found.");
             }
 
-            // Update the profile fields if they are provided in the request
+            // Update the fields only if they are provided
             if (!string.IsNullOrEmpty(profileUpdate.profile_pic))
             {
                 user.profile_pic = profileUpdate.profile_pic;
@@ -88,10 +136,29 @@ namespace Backend_Api_services.Controllers
 
             return Ok("Profile updated successfully.");
         }
+
         // GET: api/Posts
         [HttpGet("userposts")]
         public async Task<ActionResult<IEnumerable<PostResponse>>> GetUserPostsById(int userId, int viewerUserId, int pageNumber = 1, int pageSize = 10)
         {
+            // Extract the signature from the headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+
+            // Ensure the signature is provided
+            if (string.IsNullOrEmpty(signature))
+            {
+                return Unauthorized("Signature is missing.");
+            }
+
+            // Prepare the data to sign (userId, viewerUserId, pageNumber, pageSize)
+            var dataToSign = $"{userId}:{viewerUserId}:{pageNumber}:{pageSize}";
+
+            // Validate the signature
+            if (!_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid signature.");
+            }
+
             // Validate input parameters
             if (pageNumber <= 0 || pageSize <= 0)
             {
@@ -122,13 +189,19 @@ namespace Backend_Api_services.Controllers
                     return StatusCode(403, "You are not allowed to view this user's private posts.");
                 }
             }
+            else if (!isOwner && userProfile.is_public)
+            {
+                // If the profile is public and the viewer is a follower, allow them to see both public and private posts
+                isApprovedFollower = await _context.Followers
+                    .AnyAsync(f => f.followed_user_id == userId && f.follower_user_id == viewerUserId && f.approval_status == "approved");
+            }
 
             // Fetch the total number of posts for the user, considering visibility
             var totalPostsQuery = _context.Posts.Where(p => p.user_id == userId);
 
             if (!isOwner)
             {
-                // If the viewer is not the owner, limit to public posts if not an approved follower
+                // If the viewer is not the owner, limit to public posts unless they are an approved follower
                 if (!isApprovedFollower)
                 {
                     totalPostsQuery = totalPostsQuery.Where(p => p.is_public);
@@ -181,10 +254,27 @@ namespace Backend_Api_services.Controllers
             return Ok(postResponses);
         }
 
-
         [HttpGet("bookmarked")]
         public async Task<ActionResult<IEnumerable<PostResponse>>> GetBookmarkedPostsByUserId(int userId, int pageNumber = 1, int pageSize = 10)
         {
+            // Extract the signature from the headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+
+            // Ensure the signature is provided
+            if (string.IsNullOrEmpty(signature))
+            {
+                return Unauthorized("Signature is missing.");
+            }
+
+            // Prepare the data to sign (userId, pageNumber, pageSize)
+            var dataToSign = $"{userId}:{pageNumber}:{pageSize}";
+
+            // Validate the signature
+            if (!_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid signature.");
+            }
+
             // Validate input parameters
             if (pageNumber <= 0 || pageSize <= 0)
             {
@@ -233,10 +323,21 @@ namespace Backend_Api_services.Controllers
 
             return Ok(postResponses);
         }
+
         // GET: api/UserProfile/{profileId}/follow-status
         [HttpGet("{profileId}/follow-status")]
         public ActionResult CheckFollowStatus(int profileId, int currentUserId)
         {
+            // Extract the signature from the request header
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            var dataToSign = $"{profileId}:{currentUserId}"; // Data to sign includes profileId and currentUserId
+
+            // Validate the signature
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             // Fetch the profile user
             var profileUser = _context.users.FirstOrDefault(u => u.user_id == profileId);
             if (profileUser == null)
@@ -260,14 +361,33 @@ namespace Backend_Api_services.Controllers
             // Return the follow status
             return Ok(followStatusResponse);
         }
+
+
         [HttpGet("sharedposts/{currentUserId}")]
         public async Task<IActionResult> GetSharedPostsForProfile(int currentUserId, int viewerUserId, int pageNumber = 1, int pageSize = 10)
         {
+            // Extract the signature from the headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+
+            // Ensure the signature is provided
+            if (string.IsNullOrEmpty(signature))
+            {
+                return Unauthorized("Signature is missing.");
+            }
+
+            // Prepare the data to sign (currentUserId, viewerUserId, pageNumber, pageSize)
+            var dataToSign = $"{currentUserId}:{viewerUserId}:{pageNumber}:{pageSize}";
+
+            // Validate the signature
+            if (!_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid signature.");
+            }
             // If the viewer (viewerUserId) is the same as the profile owner (currentUserId), show all posts
             if (viewerUserId == currentUserId)
             {
                 // The profile owner is viewing their own profile
-                return await GetSharedPostsForUser(currentUserId, pageNumber, pageSize);
+                return await GetSharedPostsForUser(currentUserId, viewerUserId, pageNumber, pageSize);
             }
 
             // Retrieve the profile information of the profile owner (currentUserId)
@@ -280,7 +400,7 @@ namespace Backend_Api_services.Controllers
             // If the profile is public, anyone can view the shared posts
             if (userProfile.is_public)
             {
-                return await GetSharedPostsForUser(currentUserId, pageNumber, pageSize);
+                return await GetSharedPostsForUser(currentUserId, viewerUserId, pageNumber, pageSize);
             }
 
             // If the profile is private, check if the viewer (viewerUserId) is an approved follower
@@ -294,27 +414,35 @@ namespace Backend_Api_services.Controllers
             }
 
             // The viewer is an approved follower, so they can view the shared posts
-            return await GetSharedPostsForUser(currentUserId, pageNumber, pageSize);
+            return await GetSharedPostsForUser(currentUserId, viewerUserId, pageNumber, pageSize);
         }
 
         // Helper method to get shared posts for a specific user with pagination
-        private async Task<IActionResult> GetSharedPostsForUser(int userId, int pageNumber, int pageSize)
+        private async Task<IActionResult> GetSharedPostsForUser(int userId, int viewerUserId, int pageNumber, int pageSize)
         {
-            var sharedPosts = await _context.SharedPosts
+            var sharedPostsQuery = _context.SharedPosts
                 .Where(sp => sp.SharerId == userId)  // Filter by the provided user ID
                 .Include(sp => sp.Sharedby)           // Include the user who shared the post
                 .Include(sp => sp.PostContent)        // Include the shared post content
-                .ThenInclude(p => p.User)             // Ensure the User related to the Post is loaded
-                .Include(sp => sp.PostContent.Media)  // Include the media associated with the post
-                .Skip((pageNumber - 1) * pageSize)    // Skip the posts for previous pages
-                .Take(pageSize)                       // Take the posts for the current page
-                .ToListAsync();
+                    .ThenInclude(p => p.User)         // Ensure the User related to the Post is loaded
+                .Include(sp => sp.PostContent.Media); // Include the media associated with the post
 
-            if (sharedPosts == null || !sharedPosts.Any())
+            // Check if there are any shared posts
+            var totalSharedPosts = await sharedPostsQuery.CountAsync();
+
+            if (totalSharedPosts == 0)
             {
-                return NotFound("No shared posts found for this user.");
+                return StatusCode(204); // No Content
             }
 
+            // Apply pagination
+            var sharedPosts = await sharedPostsQuery
+                .OrderByDescending(sp => sp.SharedAt)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            // Map the shared posts to the DTO
             var sharedPostDetailsDtos = sharedPosts.Select(sharedPost => new SharedPostDetailsDto
             {
                 ShareId = sharedPost.ShareId,
@@ -337,16 +465,38 @@ namespace Backend_Api_services.Controllers
                 OriginalPostUserId = sharedPost.PostContent.User.user_id,
                 like_count = sharedPost.PostContent.like_count,
                 comment_count = sharedPost.PostContent.comment_count,
-                is_liked = _context.Likes.Any(like => like.post_id == sharedPost.PostId && like.user_id == userId),
-                is_Bookmarked = _context.Bookmarks.Any(bookmark => bookmark.post_id == sharedPost.PostId && bookmark.user_id == userId)
+                is_liked = _context.Likes.Any(like => like.post_id == sharedPost.PostId && like.user_id == viewerUserId),
+                is_Bookmarked = _context.Bookmarks.Any(bookmark => bookmark.post_id == sharedPost.PostId && bookmark.user_id == viewerUserId)
             }).ToList();
 
             return Ok(sharedPostDetailsDtos);
         }
 
+
         [HttpGet("{userId}/followers/{viewerUserId}")]
-        public async Task<ActionResult<IEnumerable<FollowerResponse>>> GetFollowers(int userId, int viewerUserId, string search = "", int pageNumber = 1, int pageSize = 10)
+        public async Task<ActionResult<IEnumerable<FollowerResponse>>> GetFollowers(
+            int userId,
+            int viewerUserId,
+            string search = "",
+            int pageNumber = 1,
+            int pageSize = 10)
         {
+            // Extract the signature from the headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            if (string.IsNullOrEmpty(signature))
+            {
+                return Unauthorized("Signature is missing.");
+            }
+
+            // Prepare data to sign based on userId, viewerUserId, search, pageNumber, and pageSize
+            var dataToSign = $"{userId}:{viewerUserId}:{search}:{pageNumber}:{pageSize}";
+
+            // Validate the signature
+            if (!_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid signature.");
+            }
+
             // Validate input parameters
             if (pageNumber <= 0 || pageSize <= 0)
             {
@@ -403,12 +553,33 @@ namespace Backend_Api_services.Controllers
 
 
         [HttpGet("{userId}/following/{viewerUserId}")]
-        public async Task<ActionResult<IEnumerable<FollowingResponse>>> GetFollowing(int userId, int viewerUserId, string search = "", int pageNumber = 1, int pageSize = 10)
+        public async Task<ActionResult<IEnumerable<FollowingResponse>>> GetFollowing(
+            int userId,
+            int viewerUserId,
+            string search = "",
+            int pageNumber = 1,
+            int pageSize = 10)
         {
             // Validate input parameters
             if (pageNumber <= 0 || pageSize <= 0)
             {
                 return BadRequest("Page number and page size must be greater than zero.");
+            }
+
+            // Extract the signature from the request headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            if (string.IsNullOrEmpty(signature))
+            {
+                return Unauthorized("Signature is missing.");
+            }
+
+            // Prepare the data to sign (userId, viewerUserId, search, pageNumber, pageSize)
+            var dataToSign = $"{userId}:{viewerUserId}:{search}:{pageNumber}:{pageSize}";
+
+            // Validate the signature
+            if (!_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid signature.");
             }
 
             // Validate the user exists
@@ -418,7 +589,7 @@ namespace Backend_Api_services.Controllers
                 return NotFound("User not found.");
             }
 
-            // Check if the user allows public viewing of following list
+            // Check if the user allows public viewing of the following list
             if (!user.isFollowingPublic && viewerUserId != userId)
             {
                 return StatusCode(403, "The following list is private.");
@@ -458,9 +629,31 @@ namespace Backend_Api_services.Controllers
 
             return Ok(response);
         }
+
+
         [HttpPut("change-privacy")]
-        public async Task<IActionResult> ChangeAllPrivacySettings(int userId, bool? isPublic = null, bool? isFollowersPublic = null, bool? isFollowingPublic = null)
+        public async Task<IActionResult> ChangeAllPrivacySettings(
+            int userId,
+            bool? isPublic = null,
+            bool? isFollowersPublic = null,
+            bool? isFollowingPublic = null)
         {
+            // Extract the signature from the request headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            if (string.IsNullOrEmpty(signature))
+            {
+                return Unauthorized("Signature is missing.");
+            }
+
+            // Prepare the data to sign based on the userId and privacy settings
+            var dataToSign = $"{userId}:{isPublic?.ToString() ?? "null"}:{isFollowersPublic?.ToString() ?? "null"}:{isFollowingPublic?.ToString() ?? "null"}";
+
+            // Validate the signature
+            if (!_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid signature.");
+            }
+
             // Fetch the user profile by userId
             var userProfile = await _context.users.FindAsync(userId);
             if (userProfile == null)
@@ -497,9 +690,20 @@ namespace Backend_Api_services.Controllers
             }
         }
 
+
         [HttpGet("check-privacy/{userId}")]
         public async Task<IActionResult> CheckProfilePrivacy(int userId)
         {
+            // Extract the signature from the request header
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            var dataToSign = $"{userId}";  // The userId is the data to sign
+
+            // Validate the signature
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             // Fetch the user profile by userId
             var userProfile = await _context.users.FindAsync(userId);
             if (userProfile == null)
@@ -516,9 +720,26 @@ namespace Backend_Api_services.Controllers
             });
         }
 
+
         [HttpPost("{id}/change-password")]
         public async Task<IActionResult> ChangePassword(int id, [FromBody] ChangePasswordRequestDto changePasswordDto)
         {
+            // Extract the signature from the headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            if (string.IsNullOrEmpty(signature))
+            {
+                return Unauthorized("Signature is missing.");
+            }
+
+            // Prepare the data to sign: id, old password, and new password
+            var dataToSign = $"{id}:{changePasswordDto.OldPassword}:{changePasswordDto.NewPassword}";
+
+            // Validate the signature using the dynamically constructed dataToSign
+            if (!_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid signature.");
+            }
+
             // Fetch the user by ID
             var user = await _context.users.FirstOrDefaultAsync(u => u.user_id == id);
             if (user == null)
@@ -557,12 +778,30 @@ namespace Backend_Api_services.Controllers
         [HttpDelete("delete-post/{postId}")]
         public async Task<IActionResult> DeletePost(int postId, int userId)
         {
+            // Extract the signature from the request headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            if (string.IsNullOrEmpty(signature))
+            {
+                return Unauthorized("Signature is missing.");
+            }
+
+            // Prepare the data to sign based on postId and userId
+            var dataToSign = $"{postId}:{userId}";
+
+            // Validate the signature
+            if (!_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid signature.");
+            }
+
+            // Fetch the post by postId and userId
             var post = await _context.Posts.FirstOrDefaultAsync(p => p.post_id == postId && p.user_id == userId);
             if (post == null)
             {
                 return NotFound("Post not found or you do not have permission to delete this post.");
             }
 
+            // Remove the post
             _context.Posts.Remove(post);
             await _context.SaveChangesAsync();
 
@@ -570,14 +809,40 @@ namespace Backend_Api_services.Controllers
         }
 
         [HttpPut("edit-post/{postId}")]
-        public async Task<IActionResult> EditPostCaption(int postId, [FromBody] string newCaption, int userId)
+        public async Task<IActionResult> EditPostCaption(int postId, [FromBody] EditCaptionRequest request, int userId)
         {
+            if (request == null || string.IsNullOrEmpty(request.NewCaption))
+            {
+                return BadRequest("New caption is required.");
+            }
+
+            var newCaption = request.NewCaption;
+
+            var dataToSign = $"{postId}:{userId}";
+
+            // Extract the signature from the headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+
+            // Validate if the signature is present
+            if (string.IsNullOrEmpty(signature))
+            {
+                return Unauthorized("Signature is missing.");
+            }
+
+            // Validate the signature
+            if (!_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid signature.");
+            }
+
+            // Fetch the post and check permissions
             var post = await _context.Posts.FirstOrDefaultAsync(p => p.post_id == postId && p.user_id == userId);
             if (post == null)
             {
                 return NotFound("Post not found or you do not have permission to edit this post.");
             }
 
+            // Update the post's caption
             post.caption = newCaption;
             await _context.SaveChangesAsync();
 
@@ -587,6 +852,22 @@ namespace Backend_Api_services.Controllers
         [HttpDelete("delete-shared-post/{sharedPostId}")]
         public async Task<IActionResult> DeleteSharedPost(int sharedPostId, int userId)
         {
+            // Extract the signature from the request headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            if (string.IsNullOrEmpty(signature))
+            {
+                return Unauthorized("Signature is missing.");
+            }
+
+            // Prepare the data to sign based on postId and userId
+            var dataToSign = $"{sharedPostId}:{userId}";
+
+            // Validate the signature
+            if (!_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid signature.");
+            }
+
             var sharedPost = await _context.SharedPosts.FirstOrDefaultAsync(sp => sp.ShareId == sharedPostId && sp.SharerId == userId);
             if (sharedPost == null)
             {
@@ -600,14 +881,41 @@ namespace Backend_Api_services.Controllers
         }
 
         [HttpPut("edit-shared-post/{sharedPostId}")]
-        public async Task<IActionResult> EditSharedPostComment(int sharedPostId, [FromBody] string newComment, int userId)
+        public async Task<IActionResult> EditSharedPostComment(int sharedPostId, [FromBody] EditCaptionRequest request, int userId)
         {
+            if (request == null || string.IsNullOrEmpty(request.NewCaption))
+            {
+                return BadRequest("New comment is required.");
+            }
+
+            var newComment = request.NewCaption;
+
+            // Data to sign includes sharedPostId, userId, and newComment
+            var dataToSign = $"{sharedPostId}:{userId}:{newComment}";
+
+            // Extract the signature from the headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+
+            // Validate if the signature is present
+            if (string.IsNullOrEmpty(signature))
+            {
+                return Unauthorized("Signature is missing.");
+            }
+
+            // Validate the signature
+            if (!_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid signature.");
+            }
+
+            // Fetch the shared post and check permissions
             var sharedPost = await _context.SharedPosts.FirstOrDefaultAsync(sp => sp.ShareId == sharedPostId && sp.SharerId == userId);
             if (sharedPost == null)
             {
                 return NotFound("Shared post not found or you do not have permission to edit this shared post.");
             }
 
+            // Update the shared post's comment
             sharedPost.Comment = newComment;
             await _context.SaveChangesAsync();
 
