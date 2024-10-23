@@ -47,5 +47,9 @@ namespace Backend_Api_services.Models.Data
         public DbSet<storyviews> StoryViews { get; set; }
         public DbSet<Bookmark> Bookmarks { get; set; }
         public DbSet<Followers> Followers { get; set; }
+        public DbSet<Chat> Chats { get; set; }
+        public DbSet<Chat_Media> ChatMedia { get; set; }
+        public DbSet<Messages> Messages { get; set; }
+        public DbSet<Online_Status> OnlineStatus { get; set; }
     }
 }
