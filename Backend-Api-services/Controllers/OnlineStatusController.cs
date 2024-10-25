@@ -15,8 +15,8 @@ namespace Backend_Api_services.Controllers
         {
             _context = context;
         }
-
-        // Update online status
+        /*
+        // Update online status,this endpoint is depracted
         [HttpPost("update-status")]
         public async Task<IActionResult> UpdateStatus([FromBody] UpdateOnlineStatusDto dto)
         {
@@ -41,7 +41,9 @@ namespace Backend_Api_services.Controllers
             await _context.SaveChangesAsync();
             return Ok();
         }
+        */
 
+        
         // Get online status for a user
         [HttpGet("{userId}")]
         public async Task<IActionResult> GetStatus(int userId)

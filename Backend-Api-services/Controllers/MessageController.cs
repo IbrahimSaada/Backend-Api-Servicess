@@ -17,8 +17,8 @@ namespace Backend_Api_services.Controllers
         {
             _context = context;
         }
-
-        // Send a new message
+        /*
+        // Send a new message, this endpoint is depracted
         [HttpPost("create-message")]
         public async Task<IActionResult> CreateMessage([FromBody] CreateMessageDto dto)
         {
@@ -73,7 +73,7 @@ namespace Backend_Api_services.Controllers
 
             return Ok(result);
         }
-
+        */
 
         // Fetch messages in a chat
         [HttpGet("get-messages/{chatId}")]
@@ -86,6 +86,8 @@ namespace Backend_Api_services.Controllers
                     MessageId = m.message_id,
                     ChatId = m.chat_id,
                     SenderId = m.sender_id,
+                    SenderUsername = m.Sender.fullname,
+                    SenderProfilePic = m.Sender.profile_pic,
                     MessageType = m.message_type,
                     MessageContent = m.message_content,
                     CreatedAt = m.created_at,
@@ -99,7 +101,8 @@ namespace Backend_Api_services.Controllers
             return Ok(messages);
         }
 
-        // Edit a message
+        /*
+        // Edit a message, this endpoint is depracted
         [HttpPost("edit-message")]
         public async Task<IActionResult> EditMessage([FromBody] EditMessageDto dto)
         {
@@ -116,8 +119,10 @@ namespace Backend_Api_services.Controllers
             await _context.SaveChangesAsync();
             return Ok();
         }
+        */
 
-        // Unsend a message
+        /*
+        // Unsend a message, this endpoint is depracted
         [HttpPost("unsend-message")]
         public async Task<IActionResult> UnsendMessage([FromBody] UnsendMessageDto dto)
         {
@@ -133,5 +138,6 @@ namespace Backend_Api_services.Controllers
             await _context.SaveChangesAsync();
             return Ok();
         }
+        */
     }
 }

@@ -17,8 +17,8 @@ namespace Backend_Api_services.Controllers
         {
             _context = context;
         }
-
-        // Create a new chat
+        /*
+        // Create a new chat this endpoint is depracted
         [HttpPost("create-chat")]
         public async Task<IActionResult> CreateChat([FromBody] CreateChatDto dto)
         {
@@ -51,6 +51,7 @@ namespace Backend_Api_services.Controllers
                 CreatedAt = chat.created_at
             });
         }
+        */
 
 
         // Fetch all chats for a user
@@ -64,7 +65,11 @@ namespace Backend_Api_services.Controllers
                 {
                     ChatId = c.chat_id,
                     InitiatorUserId = c.user_initiator,
+                    InitiatorUsername = c.InitiatorUser.fullname,
+                    InitiatorProfilePic = c.InitiatorUser.profile_pic,
                     RecipientUserId = c.user_recipient,
+                    RecipientUsername = c.RecipientUser.fullname,
+                    RecipientProfilePic = c.RecipientUser.profile_pic,
                     CreatedAt = c.created_at
                 })
                 .ToListAsync();
@@ -72,6 +77,7 @@ namespace Backend_Api_services.Controllers
             return Ok(chats);
         }
 
+        /* this endpoint is depracted
         // Soft delete a chat
         [HttpPost("delete-chat")]
         public async Task<IActionResult> DeleteChat([FromBody] DeleteChatDto dto)
@@ -99,5 +105,6 @@ namespace Backend_Api_services.Controllers
             await _context.SaveChangesAsync();
             return Ok();
         }
+        */
     }
 }

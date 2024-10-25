@@ -4,7 +4,12 @@
     {
         public int ChatId { get; set; }
         public int InitiatorUserId { get; set; }
+        public string InitiatorUsername { get; set; }
+        public string InitiatorProfilePic { get; set; }
         public int RecipientUserId { get; set; }
+        public string RecipientUsername { get; set; }
+        public string RecipientProfilePic { get; set; }
         public DateTime CreatedAt { get; set; }
     }
+
 }

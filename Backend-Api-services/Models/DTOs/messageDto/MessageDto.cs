@@ -5,6 +5,8 @@
         public int MessageId { get; set; }
         public int ChatId { get; set; }
         public int SenderId { get; set; }
+        public string SenderUsername { get; set; }
+        public string SenderProfilePic { get; set; }
         public string MessageType { get; set; }
         public string MessageContent { get; set; }
         public DateTime CreatedAt { get; set; }
