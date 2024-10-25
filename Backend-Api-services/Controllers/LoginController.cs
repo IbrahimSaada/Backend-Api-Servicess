@@ -83,7 +83,7 @@ public class LoginController : ControllerBase
 
         _logger.LogInformation("User logged in successfully: {EmailOrPhoneNumber}", loginModel.EmailOrPhoneNumber);
 
-        var accessToken = GenerateJwtToken(user.username);
+        var accessToken = GenerateJwtToken(user);
         var refreshToken = GenerateRefreshToken();
 
         // Save the refresh token in the database
@@ -108,12 +108,13 @@ public class LoginController : ControllerBase
         });
     }
 
-    private string GenerateJwtToken(string username)
+    private string GenerateJwtToken(Users user)
     {
         var claims = new[]
         {
-            new Claim(JwtRegisteredClaimNames.Sub, username),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            new Claim(JwtRegisteredClaimNames.Sub, user.username),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim(ClaimTypes.NameIdentifier, user.user_id.ToString())
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
@@ -176,7 +177,7 @@ public class LoginController : ControllerBase
             return Unauthorized("User not found.");
         }
 
-        var newAccessToken = GenerateJwtToken(user.username);
+        var newAccessToken = GenerateJwtToken(user);
         var newRefreshToken = GenerateRefreshToken();
 
         storedRefreshToken.token = newRefreshToken;
