@@ -15,18 +15,25 @@ using Backend_Api_services.BackgroundServices;
 using System.Text;
 using FirebaseAdmin;
 using Google.Apis.Auth.OAuth2;
+using Microsoft.AspNetCore.SignalR;  // Add this line
+using Backend_Api_services.Hubs;    // Add this line
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllers();
+
+// Add SignalR services
+builder.Services.AddSignalR();
+
+// Configure Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "My API", Version = "v1" });
 });
 
-// Configure PostgreSQL with connection string from environment variables
+// Configure PostgreSQL with connection string
 builder.Services.AddDbContext<apiDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
@@ -53,7 +60,8 @@ builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
     options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-}).AddJwtBearer(options =>
+})
+.AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
     {
@@ -66,6 +74,23 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(key),
         ClockSkew = TimeSpan.Zero
     };
+
+    // For SignalR authentication
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+
+            // If the request is for our hub...
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chathub"))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
 // Configure AWS credentials
@@ -77,7 +102,7 @@ var awsCredentials = new Amazon.Runtime.BasicAWSCredentials(
 var awsOptions = builder.Configuration.GetAWSOptions();
 awsOptions.Credentials = awsCredentials;
 builder.Services.AddDefaultAWSOptions(awsOptions);
-// Inside ConfigureServices method
+
 builder.Services.AddSingleton<IAwsS3Service, AwsS3Service>();
 builder.Services.AddSingleton<IAwsSettings>(sp => new AwsSettings
 {
@@ -87,7 +112,7 @@ builder.Services.AddSingleton<IAwsSettings>(sp => new AwsSettings
 });
 builder.Services.AddSingleton<IEnvironmentSettings>(sp => new EnvironmentSettings
 {
-    ShortName = "cookingApp-dev" // Set this to your specific environment's short name, e.g., "prod" or "dev"
+    ShortName = "cookingApp-dev" // Set this to your specific environment's short name
 });
 
 // Register AWS S3 client
@@ -97,20 +122,15 @@ builder.Services.AddAWSService<IAmazonS3>();
 builder.Services.AddSingleton<EmailService>();
 
 // Register the StoryExpirationService background service
-builder.Services.AddHostedService<StoryExpirationService>(); // Add this line
+builder.Services.AddHostedService<StoryExpirationService>();
 
 builder.Services.AddScoped<SignatureService>();
-
 builder.Services.AddTransient<IQRCodeService, QRCodeService>();
-
 builder.Services.AddScoped<IFileService, FileService>();
 
 var app = builder.Build();
 
-// Path to your service account file in the Keys folder
 var serviceAccountPath = Path.Combine(Directory.GetCurrentDirectory(), "Keys", "cooktalk-cd05d-firebase-adminsdk-ela2u-a3aa2219b7.json");
-
-// Initialize Firebase using the service account key
 FirebaseApp.Create(new AppOptions
 {
     Credential = GoogleCredential.FromFile(serviceAccountPath),
@@ -134,6 +154,9 @@ app.UseCors("AllowAllOrigins");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+// Map the SignalR hub
+app.MapHub<ChatHub>("/chathub");
 
 // Add startup logging
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
