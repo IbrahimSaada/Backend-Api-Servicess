@@ -51,26 +51,26 @@ public class LoginController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Login([FromBody] LoginModel loginModel)
     {
-        if (loginModel == null || string.IsNullOrEmpty(loginModel.EmailOrPhoneNumber) || string.IsNullOrEmpty(loginModel.Password))
-        {
-            return BadRequest("Email or phone number and password are required.");
-        }
+    //    if (loginModel == null || string.IsNullOrEmpty(loginModel.EmailOrPhoneNumber) || string.IsNullOrEmpty(loginModel.Password))
+     //   {
+     //       return BadRequest("Email or phone number and password are required.");
+     //   }
 
-        // Extract signature from headers
-        var signature = Request.Headers["X-Signature"].FirstOrDefault();
-        if (string.IsNullOrEmpty(signature))
-        {
-            return Unauthorized("Signature missing.");
-        }
+      //  // Extract signature from headers
+      //  var signature = Request.Headers["X-Signature"].FirstOrDefault();
+      //  if (string.IsNullOrEmpty(signature))
+     //   {
+     //       return Unauthorized("Signature missing.");
+      //  }
 
         // Create string representation for signing (could use JSON serialization)
-        var requestData = $"{loginModel.EmailOrPhoneNumber}:{loginModel.Password}";
+     //   var requestData = $"{loginModel.EmailOrPhoneNumber}:{loginModel.Password}";
 
         // Validate the signature
-        if (!ValidateSignature(signature, requestData))
-        {
-            return Unauthorized("Invalid signature.");
-        }
+      //  if (!ValidateSignature(signature, requestData))
+      //  {
+      //      return Unauthorized("Invalid signature.");
+      //  }
 
         var user = await _context.users.FirstOrDefaultAsync(u =>
             (u.email == loginModel.EmailOrPhoneNumber || u.phone_number == loginModel.EmailOrPhoneNumber) &&
@@ -112,9 +112,8 @@ public class LoginController : ControllerBase
     {
         var claims = new[]
         {
-            new Claim(JwtRegisteredClaimNames.Sub, user.username),
+            new Claim(JwtRegisteredClaimNames.Sub, user.user_id.ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim(ClaimTypes.NameIdentifier, user.user_id.ToString())
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));

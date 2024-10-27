@@ -17,6 +17,8 @@ using FirebaseAdmin;
 using Google.Apis.Auth.OAuth2;
 using Microsoft.AspNetCore.SignalR;  // Add this line
 using Backend_Api_services.Hubs;    // Add this line
+using Newtonsoft.Json.Serialization;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,7 +26,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 
 // Add SignalR services
-builder.Services.AddSignalR();
+// Add SignalR services with detailed errors enabled
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = true;
+});
+
 
 // Configure Swagger
 builder.Services.AddEndpointsApiExplorer();

@@ -92,6 +92,52 @@ namespace Backend_Api_services.Hubs
             await base.OnDisconnectedAsync(exception);
         }
 
+        // Method to fetch messages for a specific chat
+        public async Task<List<MessageDto>> FetchMessages(int chatId)
+        {
+            int userId = int.Parse(Context.UserIdentifier);
+
+            // Log that the method is called
+            Console.WriteLine($"FetchMessages called by user {userId} for chat {chatId}");
+
+            // Verify that the user is part of the chat
+            var chat = await _context.Chats.FirstOrDefaultAsync(c =>
+                c.chat_id == chatId &&
+                (c.user_initiator == userId || c.user_recipient == userId)
+            );
+
+            if (chat == null)
+            {
+                // User is not part of the chat
+                Console.WriteLine($"User {userId} is not part of chat {chatId}");
+                return new List<MessageDto>();
+            }
+
+            // Fetch messages
+            var messages = await _context.Messages
+                .Where(m => m.chat_id == chatId)
+                .OrderBy(m => m.created_at)
+                .Select(m => new MessageDto
+                {
+                    MessageId = m.message_id,
+                    ChatId = m.chat_id,
+                    SenderId = m.sender_id,
+                    MessageType = m.message_type,
+                    MessageContent = m.message_content,
+                    CreatedAt = m.created_at,
+                    ReadAt = m.read_at,
+                    IsEdited = m.is_edited,
+                    IsUnsent = m.is_unsent,
+                    MediaUrls = m.MediaItems.Select(mi => mi.media_url).ToList()
+                })
+                .ToListAsync();
+
+            Console.WriteLine($"FetchMessages returning {messages.Count} messages for chat {chatId}");
+
+            return messages;
+        }
+
+
         // Method to send a message to a specific user
         public async Task SendMessage(int recipientUserId, string messageContent, string messageType = "text", List<string> mediaUrls = null)
         {
