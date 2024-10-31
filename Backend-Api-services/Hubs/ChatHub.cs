@@ -128,7 +128,11 @@ namespace Backend_Api_services.Hubs
                     ReadAt = m.read_at,
                     IsEdited = m.is_edited,
                     IsUnsent = m.is_unsent,
-                    MediaUrls = m.MediaItems.Select(mi => mi.media_url).ToList()
+                    MediaItems = m.MediaItems.Select(mi => new MediaItemDto
+                    {
+                        MediaUrl = mi.media_url,
+                        MediaType = mi.media_type
+                    }).ToList() // Include both media_url and media_type
                 })
                 .ToListAsync();
 
@@ -139,7 +143,7 @@ namespace Backend_Api_services.Hubs
 
 
         // Method to send a message to a specific user
-        public async Task SendMessage(int recipientUserId, string messageContent, string messageType = "text", List<string> mediaUrls = null)
+        public async Task SendMessage(int recipientUserId, string messageContent, string messageType, List<MediaItemDto> mediaItems)
         {
             int senderId = int.Parse(Context.UserIdentifier);
 
@@ -187,15 +191,15 @@ namespace Backend_Api_services.Hubs
             await _context.SaveChangesAsync();
 
             // Add media items if any
-            if (mediaUrls != null && mediaUrls.Any())
+            if (mediaItems != null && mediaItems.Any())
             {
-                foreach (var mediaUrl in mediaUrls)
+                foreach (var mediaItem in mediaItems)
                 {
                     var media = new Chat_Media
                     {
                         message_id = message.message_id,
-                        media_url = mediaUrl,
-                        media_type = messageType // Assuming the messageType corresponds to mediaType
+                        media_url = mediaItem.MediaUrl,
+                        media_type = mediaItem.MediaType
                     };
                     _context.ChatMedia.Add(media);
                 }
@@ -211,7 +215,7 @@ namespace Backend_Api_services.Hubs
                 MessageType = message.message_type,
                 MessageContent = message.message_content,
                 CreatedAt = message.created_at,
-                MediaUrls = mediaUrls,
+                MediaItems = mediaItems, // Include media items with media types
                 IsEdited = message.is_edited,
                 IsUnsent = message.is_unsent
             };
