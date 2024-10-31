@@ -14,5 +14,6 @@
         public bool IsEdited { get; set; }
         public bool IsUnsent { get; set; }
         public List<string> MediaUrls { get; set; }
+        public List<MediaItemDto> MediaItems { get; set; }
     }
 }
