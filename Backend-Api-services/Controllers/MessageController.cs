@@ -74,32 +74,36 @@ namespace Backend_Api_services.Controllers
             return Ok(result);
         }
         */
-
+  
         // Fetch messages in a chat
         [HttpGet("get-messages/{chatId}")]
         public async Task<IActionResult> GetMessagesByChat(int chatId)
         {
             var messages = await _context.Messages
                 .Where(m => m.chat_id == chatId)
+                .OrderBy(m => m.created_at)
                 .Select(m => new MessageDto
                 {
                     MessageId = m.message_id,
                     ChatId = m.chat_id,
                     SenderId = m.sender_id,
-                    SenderUsername = m.Sender.fullname,
-                    SenderProfilePic = m.Sender.profile_pic,
                     MessageType = m.message_type,
                     MessageContent = m.message_content,
                     CreatedAt = m.created_at,
                     ReadAt = m.read_at,
                     IsEdited = m.is_edited,
                     IsUnsent = m.is_unsent,
-                    MediaUrls = m.MediaItems.Select(mi => mi.media_url).ToList()
+                    MediaItems = m.MediaItems.Select(mi => new MediaItemDto
+                    {
+                        MediaUrl = mi.media_url,
+                        MediaType = mi.media_type
+                    }).ToList() // Include both media_url and media_type
                 })
                 .ToListAsync();
 
             return Ok(messages);
         }
+
 
         /*
         // Edit a message, this endpoint is depracted
