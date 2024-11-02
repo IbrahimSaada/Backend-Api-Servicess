@@ -77,11 +77,15 @@ namespace Backend_Api_services.Controllers
   
         // Fetch messages in a chat
         [HttpGet("get-messages/{chatId}")]
-        public async Task<IActionResult> GetMessagesByChat(int chatId)
+        public async Task<IActionResult> GetMessagesByChat(int chatId, int pageNumber = 1, int pageSize = 20)
         {
+            int skipCount = (pageNumber - 1) * pageSize;
+
             var messages = await _context.Messages
                 .Where(m => m.chat_id == chatId)
-                .OrderBy(m => m.created_at)
+                .OrderByDescending(m => m.created_at) // Get latest messages first
+                .Skip(skipCount)
+                .Take(pageSize)
                 .Select(m => new MessageDto
                 {
                     MessageId = m.message_id,
@@ -97,9 +101,10 @@ namespace Backend_Api_services.Controllers
                     {
                         MediaUrl = mi.media_url,
                         MediaType = mi.media_type
-                    }).ToList() // Include both media_url and media_type
+                    }).ToList()
                 })
                 .ToListAsync();
+            messages.Reverse();
 
             return Ok(messages);
         }

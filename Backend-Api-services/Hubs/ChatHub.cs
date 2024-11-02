@@ -93,7 +93,7 @@ namespace Backend_Api_services.Hubs
         }
 
         // Method to fetch messages for a specific chat
-        public async Task<List<MessageDto>> FetchMessages(int chatId)
+        public async Task<List<MessageDto>> FetchMessages(int chatId, int pageNumber = 1, int pageSize = 20)
         {
             int userId = int.Parse(Context.UserIdentifier);
 
@@ -113,10 +113,15 @@ namespace Backend_Api_services.Hubs
                 return new List<MessageDto>();
             }
 
-            // Fetch messages
+            // Calculate the number of messages to skip
+            int skipCount = (pageNumber - 1) * pageSize;
+
+            // Fetch messages with pagination
             var messages = await _context.Messages
                 .Where(m => m.chat_id == chatId)
-                .OrderBy(m => m.created_at)
+                .OrderByDescending(m => m.created_at) // Get latest messages first
+                .Skip(skipCount)
+                .Take(pageSize)
                 .Select(m => new MessageDto
                 {
                     MessageId = m.message_id,
@@ -132,11 +137,14 @@ namespace Backend_Api_services.Hubs
                     {
                         MediaUrl = mi.media_url,
                         MediaType = mi.media_type
-                    }).ToList() // Include both media_url and media_type
+                    }).ToList()
                 })
                 .ToListAsync();
 
             Console.WriteLine($"FetchMessages returning {messages.Count} messages for chat {chatId}");
+
+            // Reverse the list to have chronological order (oldest first)
+            messages.Reverse();
 
             return messages;
         }
