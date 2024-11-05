@@ -9,6 +9,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Backend_Api_services.Models.DTOs.messageDto;
+using Backend_Api_services.Models.DTOs.chatDto;
 
 namespace Backend_Api_services.Hubs
 {
@@ -277,6 +278,80 @@ namespace Backend_Api_services.Hubs
                 {
                     await Clients.Clients(senderConnections).SendAsync("MessagesRead", chatId, userId);
                 }
+            }
+        }
+
+        // create chat
+        public async Task CreateChat(int recipientUserId)
+        {
+            int initiatorUserId = int.Parse(Context.UserIdentifier);
+
+            // Fetch recipient user's profile to check the is_public status
+            var recipientUser = await _context.users.FindAsync(recipientUserId);
+            if (recipientUser == null)
+            {
+                await Clients.Caller.SendAsync("Error", "Recipient user not found.");
+                return;
+            }
+
+            // Check if recipient's profile is private and follow approval is required
+            if (!recipientUser.is_public)
+            {
+                // Verify if the initiator has approval to chat with the recipient (either way)
+                var followRelationship = await _context.Followers
+                    .FirstOrDefaultAsync(f =>
+                        (f.followed_user_id == recipientUserId && f.follower_user_id == initiatorUserId && f.approval_status == "approved") ||
+                        (f.followed_user_id == initiatorUserId && f.follower_user_id == recipientUserId && f.approval_status == "approved"));
+
+                if (followRelationship == null)
+                {
+                    await Clients.Caller.SendAsync("Error", "You cannot chat with this user until they approve your follow request or you approve theirs.");
+                    return;
+                }
+            }
+
+            // Check if a chat already exists between these users
+            var existingChat = await _context.Chats
+                .FirstOrDefaultAsync(c => (c.user_initiator == initiatorUserId && c.user_recipient == recipientUserId) ||
+                                          (c.user_initiator == recipientUserId && c.user_recipient == initiatorUserId));
+
+            if (existingChat != null)
+            {
+                // Notify the initiator that the chat already exists
+                await Clients.Caller.SendAsync("Error", "Chat already exists with this user.");
+                return;
+            }
+
+            // Create a new chat if allowed
+            var chat = new Chat
+            {
+                user_initiator = initiatorUserId,
+                user_recipient = recipientUserId,
+                created_at = DateTime.UtcNow
+            };
+
+            _context.Chats.Add(chat);
+            await _context.SaveChangesAsync();
+
+            // Prepare the chat DTO
+            var chatDto = new ChatDto
+            {
+                ChatId = chat.chat_id,
+                InitiatorUserId = chat.user_initiator,
+                RecipientUserId = chat.user_recipient,
+                CreatedAt = chat.created_at
+            };
+
+            // Send real-time notification to the recipient
+            if (_connections.TryGetValue(recipientUserId, out var recipientConnections))
+            {
+                await Clients.Clients(recipientConnections).SendAsync("NewChatNotification", chatDto);
+            }
+
+            // Notify the initiator about the successful chat creation
+            if (_connections.TryGetValue(initiatorUserId, out var initiatorConnections))
+            {
+                await Clients.Clients(initiatorConnections).SendAsync("ChatCreated", chatDto);
             }
         }
 

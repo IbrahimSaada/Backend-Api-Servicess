@@ -77,6 +77,64 @@ namespace Backend_Api_services.Controllers
             return Ok(chats);
         }
 
+        [HttpGet("{userId}/contacts")]
+        public async Task<ActionResult> GetContacts(int userId, string search = "", int pageNumber = 1, int pageSize = 10)
+        {
+            // Fetch followers
+            var followers = await _context.Followers
+                .Where(f => f.followed_user_id == userId && !f.is_dismissed)
+                .Select(f => new ViewContacsDto
+                {
+                    UserId = f.follower_user_id,
+                    Fullname = f.Follower.fullname,
+                    ProfilePicUrl = f.Follower.profile_pic,
+                })
+                .ToListAsync();
+
+            // Fetch following
+            var following = await _context.Followers
+                .Where(f => f.follower_user_id == userId && !f.is_dismissed)
+                .Select(f => new ViewContacsDto
+                {
+                    UserId = f.followed_user_id,
+                    Fullname = f.User.fullname,
+                    ProfilePicUrl = f.User.profile_pic,
+                })
+                .ToListAsync();
+
+            // Combine both lists and remove duplicates based on UserId
+            var allContacts = followers
+                .Concat(following)
+                .GroupBy(c => c.UserId)
+                .Select(g => g.First())
+                .ToList();
+
+            // Apply search if a search term is provided
+            if (!string.IsNullOrEmpty(search))
+            {
+                allContacts = allContacts
+                    .Where(c => c.Fullname.Contains(search, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+
+            // Calculate total records after search filtering
+            var totalRecords = allContacts.Count;
+
+            // Apply pagination in memory
+            var paginatedContacts = allContacts
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            return Ok(new
+            {
+                TotalRecords = totalRecords,
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                Contacts = paginatedContacts
+            });
+        }
+
         /* this endpoint is depracted
         // Soft delete a chat
         [HttpPost("delete-chat")]
