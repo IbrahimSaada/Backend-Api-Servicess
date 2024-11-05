@@ -59,8 +59,15 @@ namespace Backend_Api_services.Controllers
         public async Task<IActionResult> GetUserChats(int userId)
         {
             var chats = await _context.Chats
-                .Where(c => (c.user_initiator == userId && !c.is_deleted_by_initiator)
-                            || (c.user_recipient == userId && !c.is_deleted_by_recipient))
+                .Where(c =>
+                    // Include chats where the user is the initiator and hasn't deleted the chat
+                    (c.user_initiator == userId && !c.is_deleted_by_initiator)
+                    ||
+                    // Or where the user is the recipient and hasn't deleted the chat
+                    (c.user_recipient == userId && !c.is_deleted_by_recipient)
+                )
+                .Include(c => c.InitiatorUser)
+                .Include(c => c.RecipientUser)
                 .Select(c => new ChatDto
                 {
                     ChatId = c.chat_id,
@@ -70,12 +77,15 @@ namespace Backend_Api_services.Controllers
                     RecipientUserId = c.user_recipient,
                     RecipientUsername = c.RecipientUser.fullname,
                     RecipientProfilePic = c.RecipientUser.profile_pic,
-                    CreatedAt = c.created_at
+                    CreatedAt = c.created_at,
+                    deleted_at_initiator = c.deleted_at_initiator ?? default(DateTime),
+                    deleted_at_recipient = c.deleted_at_recipient ?? default(DateTime)
                 })
                 .ToListAsync();
 
             return Ok(chats);
         }
+
 
         [HttpGet("{userId}/contacts")]
         public async Task<ActionResult> GetContacts(int userId, string search = "", int pageNumber = 1, int pageSize = 10)
@@ -135,7 +145,7 @@ namespace Backend_Api_services.Controllers
             });
         }
 
-        /* this endpoint is depracted
+
         // Soft delete a chat
         [HttpPost("delete-chat")]
         public async Task<IActionResult> DeleteChat([FromBody] DeleteChatDto dto)
@@ -144,25 +154,27 @@ namespace Backend_Api_services.Controllers
 
             if (chat == null)
             {
-                return NotFound();
+                return NotFound("Chat not found.");
             }
 
             if (chat.user_initiator == dto.UserId)
             {
                 chat.is_deleted_by_initiator = true;
+                chat.deleted_at_initiator = DateTime.UtcNow;
             }
             else if (chat.user_recipient == dto.UserId)
             {
                 chat.is_deleted_by_recipient = true;
+                chat.deleted_at_recipient = DateTime.UtcNow;
             }
             else
             {
-                return BadRequest("User is not part of this chat");
+                return BadRequest("User is not part of this chat.");
             }
 
             await _context.SaveChangesAsync();
-            return Ok();
+            return Ok("Chat deleted successfully.");
         }
-        */
+
     }
 }

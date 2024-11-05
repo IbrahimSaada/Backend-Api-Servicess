@@ -18,6 +18,8 @@ namespace Backend_Api_services.Models.Entities
         public bool is_deleted_by_initiator { get; set; }
 
         public bool is_deleted_by_recipient { get; set; }
+        public DateTime? deleted_at_initiator { get; set; }
+        public DateTime? deleted_at_recipient { get; set; }
 
         [ForeignKey("user_initiator")]
         public Users InitiatorUser { get; set; }

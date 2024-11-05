@@ -98,9 +98,6 @@ namespace Backend_Api_services.Hubs
         {
             int userId = int.Parse(Context.UserIdentifier);
 
-            // Log that the method is called
-            Console.WriteLine($"FetchMessages called by user {userId} for chat {chatId}");
-
             // Verify that the user is part of the chat
             var chat = await _context.Chats.FirstOrDefaultAsync(c =>
                 c.chat_id == chatId &&
@@ -110,20 +107,32 @@ namespace Backend_Api_services.Hubs
             if (chat == null)
             {
                 // User is not part of the chat
-                Console.WriteLine($"User {userId} is not part of chat {chatId}");
                 return new List<MessageDto>();
             }
 
-            // Calculate the number of messages to skip
-            int skipCount = (pageNumber - 1) * pageSize;
+            // Determine the appropriate deletion timestamp for message filtering
+            DateTime? deleteTimestamp = null;
+            if (chat.user_initiator == userId)
+                deleteTimestamp = chat.deleted_at_initiator;
+            else if (chat.user_recipient == userId)
+                deleteTimestamp = chat.deleted_at_recipient;
 
-            // Fetch messages with pagination
-            var messages = await _context.Messages
-                .Where(m => m.chat_id == chatId)
-                .OrderByDescending(m => m.created_at) // Get latest messages first
-                .Skip(skipCount)
+            // Fetch messages with pagination, applying the deletion timestamp filter if necessary
+            var messagesQuery = _context.Messages
+                .Where(m => m.chat_id == chatId);
+
+            // Apply the deletion timestamp filter to show only messages after the last deletion
+            if (deleteTimestamp.HasValue)
+            {
+                messagesQuery = messagesQuery.Where(m => m.created_at >= deleteTimestamp.Value);
+
+            }
+
+            var messages = await messagesQuery
+                .OrderByDescending(m => m.created_at) // Get messages in reverse chronological order
+                .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
-                .Select(m => new MessageDto
+                            .Select(m => new MessageDto
                 {
                     MessageId = m.message_id,
                     ChatId = m.chat_id,
@@ -142,13 +151,9 @@ namespace Backend_Api_services.Hubs
                 })
                 .ToListAsync();
 
-            Console.WriteLine($"FetchMessages returning {messages.Count} messages for chat {chatId}");
-
-            // Reverse the list to have chronological order (oldest first)
-            messages.Reverse();
-
             return messages;
         }
+
 
 
         // Method to send a message to a specific user
@@ -159,8 +164,8 @@ namespace Backend_Api_services.Hubs
             // Check if the sender is allowed to chat with the recipient
             var followedUser = await _context.Followers
                 .FirstOrDefaultAsync(f => f.followed_user_id == recipientUserId
-                                       && f.follower_user_id == senderId
-                                       && f.approval_status == "approved");
+                                           && f.follower_user_id == senderId
+                                           && f.approval_status == "approved");
 
             if (followedUser == null)
             {
@@ -183,8 +188,25 @@ namespace Backend_Api_services.Hubs
                     created_at = DateTime.UtcNow
                 };
                 _context.Chats.Add(chat);
-                await _context.SaveChangesAsync();
             }
+            else
+            {
+                // Reset the deletion flag for the recipient
+                if (chat.user_initiator == recipientUserId && chat.is_deleted_by_initiator)
+                {
+                    chat.is_deleted_by_initiator = false;
+                }
+                else if (chat.user_recipient == recipientUserId && chat.is_deleted_by_recipient)
+                {
+                    chat.is_deleted_by_recipient = false;
+                }
+
+                // Ensure that deletion timestamps are not modified
+                _context.Entry(chat).Property(c => c.deleted_at_initiator).IsModified = false;
+                _context.Entry(chat).Property(c => c.deleted_at_recipient).IsModified = false;
+            }
+
+            await _context.SaveChangesAsync();
 
             // Create the message
             var message = new Messages
