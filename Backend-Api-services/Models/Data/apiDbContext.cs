@@ -51,5 +51,11 @@ namespace Backend_Api_services.Models.Data
         public DbSet<Chat_Media> ChatMedia { get; set; }
         public DbSet<Messages> Messages { get; set; }
         public DbSet<Online_Status> OnlineStatus { get; set; }
+        public DbSet<questions> questions { get; set; }
+        public DbSet <questionmedia> questionMedia { get; set; }
+        public DbSet <privatequestions> privatequestions { get; set; }
+        public DbSet<answers> answers { get; set; }
+        public DbSet<question_likes> question_likes { get; set; }
+
     }
 }
