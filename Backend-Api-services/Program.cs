@@ -15,23 +15,20 @@ using Backend_Api_services.BackgroundServices;
 using System.Text;
 using FirebaseAdmin;
 using Google.Apis.Auth.OAuth2;
-using Microsoft.AspNetCore.SignalR;  // Add this line
-using Backend_Api_services.Hubs;    // Add this line
+using Microsoft.AspNetCore.SignalR;
+using Backend_Api_services.Hubs;
 using Newtonsoft.Json.Serialization;
-
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllers();
 
-// Add SignalR services
 // Add SignalR services with detailed errors enabled
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = true;
 });
-
 
 // Configure Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -61,8 +58,6 @@ builder.Logging.AddConsole();
 
 // Configure JWT authentication
 var key = Encoding.ASCII.GetBytes(builder.Configuration["Jwt:Key"]);
-var tokenLifetime = double.Parse(builder.Configuration["Jwt:AccessTokenLifetime"]);
-
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -88,8 +83,6 @@ builder.Services.AddAuthentication(options =>
         OnMessageReceived = context =>
         {
             var accessToken = context.Request.Query["access_token"];
-
-            // If the request is for our hub...
             var path = context.HttpContext.Request.Path;
             if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chathub"))
             {
@@ -100,7 +93,7 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// Configure AWS credentials
+// Configure AWS credentials and options
 var awsCredentials = new Amazon.Runtime.BasicAWSCredentials(
     builder.Configuration["AWS:AccessKey"],
     builder.Configuration["AWS:SecretKey"]
@@ -125,8 +118,9 @@ builder.Services.AddSingleton<IEnvironmentSettings>(sp => new EnvironmentSetting
 // Register AWS S3 client
 builder.Services.AddAWSService<IAmazonS3>();
 
-// Register the email service
-builder.Services.AddSingleton<EmailService>();
+// Register email services
+builder.Services.AddSingleton<EmailService>(); // For general email sending
+builder.Services.AddSingleton<MessagesEmail>(); // For messages-specific email sending
 
 // Register the StoryExpirationService background service
 builder.Services.AddHostedService<StoryExpirationService>();
@@ -137,12 +131,12 @@ builder.Services.AddScoped<IFileService, FileService>();
 
 var app = builder.Build();
 
+// Initialize Firebase
 var serviceAccountPath = Path.Combine(Directory.GetCurrentDirectory(), "Keys", "cooktalk-cd05d-firebase-adminsdk-ela2u-a3aa2219b7.json");
 FirebaseApp.Create(new AppOptions
 {
     Credential = GoogleCredential.FromFile(serviceAccountPath),
 });
-
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
@@ -151,7 +145,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
     app.UseSwaggerUI(c =>
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API v1");
-        c.RoutePrefix = string.Empty; // Serve Swagger UI at the app's root
+        c.RoutePrefix = string.Empty;
     });
 }
 
