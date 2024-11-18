@@ -18,6 +18,7 @@ using Google.Apis.Auth.OAuth2;
 using Microsoft.AspNetCore.SignalR;
 using Backend_Api_services.Hubs;
 using Newtonsoft.Json.Serialization;
+using Backend_Api_services.Services.RatingService;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -128,6 +129,9 @@ builder.Services.AddHostedService<StoryExpirationService>();
 builder.Services.AddScoped<SignatureService>();
 builder.Services.AddTransient<IQRCodeService, QRCodeService>();
 builder.Services.AddScoped<IFileService, FileService>();
+
+// Register Ratingsystem for ***REMOVED***s
+builder.Services.AddScoped<RatingService>();
 
 var app = builder.Build();
 
