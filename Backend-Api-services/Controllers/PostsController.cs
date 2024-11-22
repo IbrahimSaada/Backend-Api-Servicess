@@ -2,6 +2,7 @@
 using Backend_Api_services.Models.DTOs;
 using Backend_Api_services.Models.Entities;
 using Backend_Api_services.Services;
+using Backend_Api_services.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,11 +17,13 @@ public class PostsController : ControllerBase
 {
     private readonly apiDbContext _context;
     private readonly SignatureService _signatureService;
+    private readonly INotificationService _notificationService;
 
-    public PostsController(apiDbContext context, SignatureService signatureService)
+    public PostsController(apiDbContext context, SignatureService signatureService, INotificationService notificationService)
     {
         _context = context;
         _signatureService = signatureService;
+        _notificationService = notificationService;
     }
 
     // GET: api/Posts
@@ -99,6 +102,63 @@ public class PostsController : ControllerBase
         post.like_count += 1;
 
         await _context.SaveChangesAsync();
+
+        // **Notification Logic Starts Here**
+
+        // Get the post owner ID
+        var postOwnerId = post.user_id;
+
+        // Check if the user is not liking their own post
+        if (postOwnerId != userId)
+        {
+            // Retrieve the post owner's FCM token
+            var postOwner = await _context.users
+                .FirstOrDefaultAsync(u => u.user_id == postOwnerId);
+
+            if (postOwner != null && !string.IsNullOrEmpty(postOwner.fcm_token))
+            {
+                // Retrieve the sender's full name
+                var sender = await _context.users
+                    .FirstOrDefaultAsync(u => u.user_id == userId);
+
+                string senderFullName = sender?.fullname ?? "Someone";
+
+                // Create a notification entry in the database
+                var notification = new Notification
+                {
+                    recipient_user_id = postOwnerId,
+                    sender_user_id = userId,
+                    type = "Like",
+                    related_entity_id = postId,
+                    message = $"{senderFullName} liked your post.",
+                    created_at = DateTime.UtcNow
+                };
+
+                _context.notification.Add(notification);
+                await _context.SaveChangesAsync();
+
+                // Prepare the notification request
+                var notificationRequest = new NotificationRequest
+                {
+                    Token = postOwner.fcm_token,
+                    Title = "New Like",
+                    Body = $"{senderFullName} liked your post."
+                };
+
+                // Send the push notification
+                try
+                {
+                    await _notificationService.SendNotificationAsync(notificationRequest);
+                }
+                catch (Exception ex)
+                {
+                    // Handle the exception as needed
+                    // Optionally log or ignore
+                }
+            }
+        }
+
+        // **Notification Logic Ends Here**
 
         return Ok("Post liked successfully.");
     }

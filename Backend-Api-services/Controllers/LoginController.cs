@@ -51,38 +51,51 @@ public class LoginController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Login([FromBody] LoginModel loginModel)
     {
-    //    if (loginModel == null || string.IsNullOrEmpty(loginModel.EmailOrPhoneNumber) || string.IsNullOrEmpty(loginModel.Password))
-     //   {
-     //       return BadRequest("Email or phone number and password are required.");
-     //   }
+        // Validate the input
+        if (loginModel == null || string.IsNullOrEmpty(loginModel.EmailOrPhoneNumber) || string.IsNullOrEmpty(loginModel.Password))
+        {
+            return BadRequest("Email or phone number and password are required.");
+        }
 
-      //  // Extract signature from headers
-      //  var signature = Request.Headers["X-Signature"].FirstOrDefault();
-      //  if (string.IsNullOrEmpty(signature))
-     //   {
-     //       return Unauthorized("Signature missing.");
-      //  }
+        // Extract signature from headers
+        // var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        // if (string.IsNullOrEmpty(signature))
+        // {
+        //     return Unauthorized("Signature missing.");
+        // }
 
         // Create string representation for signing (could use JSON serialization)
-     //   var requestData = $"{loginModel.EmailOrPhoneNumber}:{loginModel.Password}";
+        // var requestData = $"{loginModel.EmailOrPhoneNumber}:{loginModel.Password}:{loginModel.FcmToken}";
 
         // Validate the signature
-      //  if (!ValidateSignature(signature, requestData))
-      //  {
-      //      return Unauthorized("Invalid signature.");
-      //  }
+        // if (!ValidateSignature(signature, requestData))
+        // {
+        //     return Unauthorized("Invalid signature.");
+        // }
 
-        var user = await _context.users.FirstOrDefaultAsync(u =>
-            (u.email == loginModel.EmailOrPhoneNumber || u.phone_number == loginModel.EmailOrPhoneNumber) &&
-            u.password == loginModel.Password); // No hashing, direct comparison for now
+        // Retrieve the user from the database
+        var user = await _context.users
+            .AsNoTracking() // Ensures no accidental tracking of the entity
+            .FirstOrDefaultAsync(u =>
+                (u.email == loginModel.EmailOrPhoneNumber || u.phone_number == loginModel.EmailOrPhoneNumber) &&
+                u.password == loginModel.Password); // Direct comparison (consider hashing for security)
 
         if (user == null)
         {
             return Unauthorized("Invalid email or phone number and password combination.");
         }
 
+        // Update only the FCM token if provided
+        if (!string.IsNullOrEmpty(loginModel.FcmToken) && user.fcm_token != loginModel.FcmToken)
+        {
+            user.fcm_token = loginModel.FcmToken;
+            _context.Entry(user).Property(u => u.fcm_token).IsModified = true; // Only modify the FCM token
+            await _context.SaveChangesAsync();
+        }
+
         _logger.LogInformation("User logged in successfully: {EmailOrPhoneNumber}", loginModel.EmailOrPhoneNumber);
 
+        // Generate tokens
         var accessToken = GenerateJwtToken(user);
         var refreshToken = GenerateRefreshToken();
 
@@ -98,6 +111,7 @@ public class LoginController : ControllerBase
         _context.UserRefreshTokens.Add(userRefreshToken);
         await _context.SaveChangesAsync();
 
+        // Return the response
         return Ok(new
         {
             Token = accessToken,
@@ -107,6 +121,50 @@ public class LoginController : ControllerBase
             ProfilePic = user.profile_pic
         });
     }
+
+
+    [HttpPut("UpdateFcmToken/{userId}")]
+    public async Task<IActionResult> UpdateFcmToken(int userId, [FromBody] UpdateFcmTokenModel model)
+    {
+        if (model == null || string.IsNullOrEmpty(model.FcmToken))
+        {
+            return BadRequest("FCM token is required.");
+        }
+
+        // Extract signature from headers
+         var signature = Request.Headers["X-Signature"].FirstOrDefault();
+         if (string.IsNullOrEmpty(signature))
+         {
+             return Unauthorized("Signature missing.");
+         }
+
+         // Validate the signature
+         if (!ValidateSignature(signature, model.FcmToken))
+         {
+             return Unauthorized("Invalid signature.");
+         }
+
+        // Retrieve the user by userId
+        var user = await _context.users.AsNoTracking().FirstOrDefaultAsync(u => u.user_id == userId);
+
+        if (user == null)
+        {
+            return NotFound("User not found.");
+        }
+
+        // Update only the FCM token
+        user.fcm_token = model.FcmToken;
+
+        // Attach the user and mark only the fcm_token as modified
+        _context.Attach(user);
+        _context.Entry(user).Property(u => u.fcm_token).IsModified = true;
+
+        // Save changes
+        await _context.SaveChangesAsync();
+
+        return Ok("FCM token updated successfully.");
+    }
+
 
     private string GenerateJwtToken(Users user)
     {
@@ -190,6 +248,7 @@ public class LoginController : ControllerBase
     [HttpPost("Logout")]
     public async Task<IActionResult> Logout([FromBody] LogoutModel logoutModel)
     {
+        // Validate the refresh token
         var refreshToken = await _context.UserRefreshTokens
             .FirstOrDefaultAsync(rt => rt.userid == logoutModel.UserId && rt.token == logoutModel.RefreshToken);
 
@@ -198,7 +257,24 @@ public class LoginController : ControllerBase
             return BadRequest("Invalid user ID or refresh token.");
         }
 
+        // Remove the refresh token
         _context.UserRefreshTokens.Remove(refreshToken);
+
+        // Clear only the FCM token of the user
+        var user = await _context.users
+            .AsNoTracking() // Ensure no other fields are tracked or modified
+            .FirstOrDefaultAsync(u => u.user_id == logoutModel.UserId);
+
+        if (user != null)
+        {
+            user.fcm_token = null;
+
+            // Attach the user entity and mark only the FCM token as modified
+            _context.Attach(user);
+            _context.Entry(user).Property(u => u.fcm_token).IsModified = true;
+        }
+
+        // Save changes to the database
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("User logged out successfully: {UserId}", logoutModel.UserId);
@@ -206,10 +282,13 @@ public class LoginController : ControllerBase
         return Ok("Logged out successfully.");
     }
 
-public class LogoutModel
+    public class LogoutModel
     {
-        public int UserId { get; set; }
-        public string RefreshToken { get; set; }
+            public int UserId { get; set; }
+            public string RefreshToken { get; set; }
     }
-
+    public class UpdateFcmTokenModel
+    {
+        public string? FcmToken { get; set; }
+    }
 }

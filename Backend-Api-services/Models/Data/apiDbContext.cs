@@ -56,6 +56,7 @@ namespace Backend_Api_services.Models.Data
         public DbSet <privatequestions> privatequestions { get; set; }
         public DbSet<answers> answers { get; set; }
         public DbSet<question_likes> question_likes { get; set; }
+        public DbSet<Notification> notification { get; set; }
 
     }
 }

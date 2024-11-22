@@ -132,6 +132,8 @@ builder.Services.AddScoped<IFileService, FileService>();
 
 // Register Ratingsystem for answers
 builder.Services.AddScoped<RatingService>();
+// Register Notification Service
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 var app = builder.Build();
 
