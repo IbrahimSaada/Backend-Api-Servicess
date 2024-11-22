@@ -46,4 +46,6 @@ public class Users
     public bool is_public { get; set; } = true;
     public bool isFollowersPublic { get; set; } = true;  // Default to public
     public bool isFollowingPublic { get; set; } = true;  // Default to public
+
+    public string? fcm_token { get; set; }
 }

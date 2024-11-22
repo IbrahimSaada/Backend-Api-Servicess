@@ -56,6 +56,7 @@ namespace Backend_Api_services.Models.Data
 ***REMOVED***
 ***REMOVED***
 ***REMOVED***
+        public DbSet<Notification> notification { get; set; }
 
     }
 }

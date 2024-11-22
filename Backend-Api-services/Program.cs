@@ -132,6 +132,8 @@ builder.Services.AddScoped<IFileService, FileService>();
 
 // Register Ratingsystem for ***REMOVED***s
 builder.Services.AddScoped<RatingService>();
+// Register Notification Service
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 var app = builder.Build();
 
