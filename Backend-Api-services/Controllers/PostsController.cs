@@ -103,7 +103,7 @@ public class PostsController : ControllerBase
 
         await _context.SaveChangesAsync();
 
-        // **Notification Logic Starts Here**
+        // **Notification Logic Simplified**
 
         // Get the post owner ID
         var postOwnerId = post.user_id;
@@ -111,54 +111,31 @@ public class PostsController : ControllerBase
         // Check if the user is not liking their own post
         if (postOwnerId != userId)
         {
-            // Retrieve the post owner's FCM token
-            var postOwner = await _context.users
-                .FirstOrDefaultAsync(u => u.user_id == postOwnerId);
+            // Retrieve the sender's full name
+            var sender = await _context.users
+                .FirstOrDefaultAsync(u => u.user_id == userId);
 
-            if (postOwner != null && !string.IsNullOrEmpty(postOwner.fcm_token))
+            string senderFullName = sender?.fullname ?? "Someone";
+
+            string message = $"{senderFullName} liked your post.";
+
+            // Use the NotificationService to send and save the notification
+            try
             {
-                // Retrieve the sender's full name
-                var sender = await _context.users
-                    .FirstOrDefaultAsync(u => u.user_id == userId);
-
-                string senderFullName = sender?.fullname ?? "Someone";
-
-                // Create a notification entry in the database
-                var notification = new Notification
-                {
-                    recipient_user_id = postOwnerId,
-                    sender_user_id = userId,
-                    type = "Like",
-                    related_entity_id = postId,
-                    message = $"{senderFullName} liked your post.",
-                    created_at = DateTime.UtcNow
-                };
-
-                _context.notification.Add(notification);
-                await _context.SaveChangesAsync();
-
-                // Prepare the notification request
-                var notificationRequest = new NotificationRequest
-                {
-                    Token = postOwner.fcm_token,
-                    Title = "New Like",
-                    Body = $"{senderFullName} liked your post."
-                };
-
-                // Send the push notification
-                try
-                {
-                    await _notificationService.SendNotificationAsync(notificationRequest);
-                }
-                catch (Exception ex)
-                {
-                    // Handle the exception as needed
-                    // Optionally log or ignore
-                }
+                await _notificationService.SendAndSaveNotificationAsync(
+                    recipientUserId: postOwnerId,
+                    senderUserId: userId,
+                    type: "Like",
+                    relatedEntityId: postId,
+                    message: message
+                );
+            }
+            catch (Exception ex)
+            {
+                // Handle the exception as needed
+                // Optionally log or ignore
             }
         }
-
-        // **Notification Logic Ends Here**
 
         return Ok("Post liked successfully.");
     }
@@ -201,7 +178,6 @@ public class PostsController : ControllerBase
         return Ok("Like removed successfully.");
     }
 
-    // POST: api/Posts/{postId}/Commenting
     [HttpPost("{postId}/Commenting")]
     public async Task<IActionResult> AddComment(int postId, [FromBody] CommentRequest commentRequest)
     {
@@ -232,6 +208,64 @@ public class PostsController : ControllerBase
         post.comment_count += 1;
 
         await _context.SaveChangesAsync();
+
+        // **Notification Logic Starts Here**
+
+        int recipientUserId = 0;
+        string notificationType = "Comment";
+        string notificationMessage = "";
+
+        var sender = await _context.users.FirstOrDefaultAsync(u => u.user_id == commentRequest.userid);
+        string senderFullName = sender?.fullname ?? "Someone";
+
+        if (commentRequest.parentcommentid == null)
+        {
+            // It's a top-level comment
+            recipientUserId = post.user_id;
+            notificationType = "Comment";
+            notificationMessage = $"{senderFullName} commented on your post.";
+        }
+        else
+        {
+            // It's a reply to a comment
+            var parentComment = await _context.Comments.FindAsync(commentRequest.parentcommentid);
+            if (parentComment != null)
+            {
+                recipientUserId = parentComment.user_id;
+                notificationType = "Reply";
+                notificationMessage = $"{senderFullName} replied to your comment.";
+            }
+        }
+
+        // Avoid sending notification to self
+        if (recipientUserId != 0 && recipientUserId != commentRequest.userid)
+        {
+            try
+            {
+                var notification = new Notification
+                {
+                    recipient_user_id = recipientUserId,
+                    sender_user_id = commentRequest.userid,
+                    type = notificationType,
+                    related_entity_id = postId,
+                    comment_id = comment.comment_id, // Include the comment_id
+                    message = notificationMessage,
+                    created_at = DateTime.UtcNow
+                };
+
+                _context.notification.Add(notification);
+                await _context.SaveChangesAsync();
+
+                // Since you're not using the data field, no need to prepare custom data
+                // Proceed to send the push notification if needed
+            }
+            catch (Exception ex)
+            {
+                // Handle the exception as needed
+            }
+        }
+
+        // **Notification Logic Ends Here**
 
         return CreatedAtAction(nameof(GetComments), new { postId = postId }, new { CommentId = comment.comment_id });
     }
@@ -460,6 +494,98 @@ public class PostsController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok("Bookmark removed successfully.");
+    }
+
+    // Adjusted API method for showing specific replies and parent
+    [HttpGet("{postId}/Comments/{commentId}/Thread")]
+    [AllowAnonymous]
+    public async Task<ActionResult<CommentResponse>> GetCommentThread(int postId, int commentId)
+    {
+        // Fetch the comment with the given commentId and postId
+        var comment = await _context.Comments
+            .Include(c => c.User)
+            .FirstOrDefaultAsync(c => c.comment_id == commentId && c.post_id == postId);
+
+        if (comment == null)
+        {
+            return NotFound("Comment not found.");
+        }
+
+        // Build the minimal thread structure
+        var minimalThread = await BuildMinimalCommentThread(comment);
+
+        return Ok(minimalThread);
+    }
+
+    // Helper method to fetch the specific comment, its parent, and the last reply
+    private async Task<CommentResponse> BuildMinimalCommentThread(Comment comment)
+    {
+        var commentResponse = new CommentResponse
+        {
+            commentid = comment.comment_id,
+            postid = comment.post_id,
+            userid = comment.user_id,
+            fullname = comment.User.fullname,
+            userprofilepic = comment.User.profile_pic,
+            text = comment.text,
+            created_at = comment.created_at,
+            isHighlighted = true, // Always highlight the requested comment
+            Replies = new List<CommentResponse>(),
+            ParentComment = null
+        };
+
+        // If the comment has a parent, fetch the parent
+        if (comment.parent_comment_id.HasValue)
+        {
+            var parentComment = await _context.Comments
+                .Include(c => c.User)
+                .FirstOrDefaultAsync(c => c.comment_id == comment.parent_comment_id.Value);
+
+            if (parentComment != null)
+            {
+                commentResponse.ParentComment = new CommentResponse
+                {
+                    commentid = parentComment.comment_id,
+                    postid = parentComment.post_id,
+                    userid = parentComment.user_id,
+                    fullname = parentComment.User.fullname,
+                    userprofilepic = parentComment.User.profile_pic,
+                    text = parentComment.text,
+                    created_at = parentComment.created_at,
+                    isHighlighted = false, // Parent comment is not highlighted
+                    Replies = null,
+                    ParentComment = null
+                };
+            }
+        }
+
+        // If the comment is a parent, fetch the latest reply
+        var latestReply = await _context.Comments
+            .Include(c => c.User)
+            .Where(c => c.parent_comment_id == comment.comment_id)
+            .OrderByDescending(c => c.created_at)
+            .FirstOrDefaultAsync();
+
+        if (latestReply != null)
+        {
+            var replyResponse = new CommentResponse
+            {
+                commentid = latestReply.comment_id,
+                postid = latestReply.post_id,
+                userid = latestReply.user_id,
+                fullname = latestReply.User.fullname,
+                userprofilepic = latestReply.User.profile_pic,
+                text = latestReply.text,
+                created_at = latestReply.created_at,
+                isHighlighted = false, // Replies are not highlighted
+                Replies = null,
+                ParentComment = null
+            };
+
+            commentResponse.Replies.Add(replyResponse);
+        }
+
+        return commentResponse;
     }
 
 }
