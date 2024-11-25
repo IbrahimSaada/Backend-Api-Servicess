@@ -49,7 +49,6 @@ namespace Backend_Api_services.Services
 
         public async Task<List<Models.Entities.Notification>> GetUserNotificationsAsync(int userId)
         {
-            // Retrieve notifications from the database
             var notifications = await _context.notification
                 .Where(n => n.recipient_user_id == userId)
                 .OrderByDescending(n => n.created_at)
@@ -66,6 +65,42 @@ namespace Backend_Api_services.Services
             {
                 notification.is_read = true;
                 await _context.SaveChangesAsync();
+            }
+        }
+
+        // **New Method to Send and Save Notifications**
+        public async Task SendAndSaveNotificationAsync(int recipientUserId, int senderUserId, string type, int? relatedEntityId, string message)
+        {
+            // Retrieve the recipient user
+            var recipientUser = await _context.users
+                .FirstOrDefaultAsync(u => u.user_id == recipientUserId);
+
+            if (recipientUser != null && !string.IsNullOrEmpty(recipientUser.fcm_token))
+            {
+                // Create a notification entry in the database
+                var notification = new Models.Entities.Notification
+                {
+                    recipient_user_id = recipientUserId,
+                    sender_user_id = senderUserId,
+                    type = type,
+                    related_entity_id = relatedEntityId,
+                    message = message,
+                    created_at = DateTime.UtcNow
+                };
+
+                _context.notification.Add(notification);
+                await _context.SaveChangesAsync();
+
+                // Prepare the notification request
+                var notificationRequest = new NotificationRequest
+                {
+                    Token = recipientUser.fcm_token,
+                    Title = $"New {type}",
+                    Body = message
+                };
+
+                // Send the push notification
+                await SendNotificationAsync(notificationRequest);
             }
         }
     }
