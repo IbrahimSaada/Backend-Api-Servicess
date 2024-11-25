@@ -262,5 +262,73 @@ namespace Backend_Api_services.Controllers
             return NotFound(new { message = "Post not found." });
         }
 
+        // Inside your FeedController
+
+        [HttpGet("SharedPost/{sharePostId}")]
+        public async Task<ActionResult<FeedItemResponse>> GetSharedPostById(int sharePostId, int userId)
+        {
+            // Check if the shared post exists
+            var sharedPost = await _context.SharedPosts.AsNoTracking()
+                .Include(sp => sp.Sharedby) // The user who shared the post
+                .Include(sp => sp.PostContent)
+                    .ThenInclude(p => p.Media)
+                .Include(sp => sp.PostContent.User) // The original post owner
+                .Where(sp => sp.ShareId == sharePostId)
+                .FirstOrDefaultAsync();
+
+            if (sharedPost == null)
+            {
+                return NotFound(new { message = "Shared post not found." });
+            }
+
+            // Get user's liked and bookmarked post IDs
+            var userLikedPostIds = GetUserLikedPostIds(userId);
+            var userBookmarkedPostIds = GetUserBookmarkedPostIds(userId);
+
+            // Build the FeedItemResponse
+            var feedItem = new FeedItemResponse
+            {
+                Type = "repost",
+                ItemId = sharedPost.ShareId,
+                CreatedAt = sharedPost.SharedAt,
+                Content = sharedPost.Comment, // Sharer's comment
+                User = new UserInfo
+                {
+                    UserId = sharedPost.Sharedby.user_id,
+                    FullName = sharedPost.Sharedby.fullname,
+                    Username = sharedPost.Sharedby.username,
+                    ProfilePictureUrl = sharedPost.Sharedby.profile_pic
+                },
+                // Include PostInfo with Author for reposts
+                Post = new PostInfo
+                {
+                    PostId = sharedPost.PostContent.post_id,
+                    CreatedAt = sharedPost.PostContent.created_at,
+                    Content = sharedPost.PostContent.caption,
+                    Media = sharedPost.PostContent.Media.Select(media => new PostMediaResponse
+                    {
+                        media_id = media.media_id,
+                        media_url = media.media_url,
+                        media_type = media.media_type,
+                        post_id = media.post_id,
+                        thumbnail_url = media.thumbnail_url
+                    }).ToList(),
+                    LikeCount = sharedPost.PostContent.like_count,
+                    CommentCount = sharedPost.PostContent.comment_count,
+                    Author = new UserInfo
+                    {
+                        UserId = sharedPost.PostContent.User.user_id,
+                        FullName = sharedPost.PostContent.User.fullname,
+                        Username = sharedPost.PostContent.User.username,
+                        ProfilePictureUrl = sharedPost.PostContent.User.profile_pic
+                    }
+                },
+                IsLiked = userLikedPostIds.Contains(sharedPost.PostContent.post_id),
+                IsBookmarked = userBookmarkedPostIds.Contains(sharedPost.PostContent.post_id)
+            };
+
+            return Ok(feedItem);
+        }
+
     }
 }
