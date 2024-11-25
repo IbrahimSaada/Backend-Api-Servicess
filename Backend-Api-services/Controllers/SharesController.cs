@@ -73,6 +73,8 @@ namespace Backend_Api_services.Controllers
 
             // **Notification Logic Starts Here**
 
+            // **Notification Logic Starts Here**
+
             var postOwnerId = post.user_id;
             var sharerId = sharePostDto.UserId;
 
@@ -91,8 +93,8 @@ namespace Backend_Api_services.Controllers
                 var data = new Dictionary<string, string>
         {
             { "type", "Share" },
-            { "related_entity_id", post.post_id.ToString() },
-            { "shared_post_id", sharedPost.PostId.ToString() } // Adjust if your shared_post entity has a different ID property
+            { "related_entity_id", sharedPost.ShareId.ToString() }, // Use sharedPost.shared_post_id here
+            { "original_post_id", post.post_id.ToString() }
         };
 
                 // Send and save the notification
@@ -102,7 +104,7 @@ namespace Backend_Api_services.Controllers
                         recipientUserId: postOwnerId,
                         senderUserId: sharerId,
                         type: "Share",
-                        relatedEntityId: post.post_id,
+                        relatedEntityId: sharedPost.ShareId, // Use shared_post_id as the relatedEntityId
                         message: message
                     );
                 }
