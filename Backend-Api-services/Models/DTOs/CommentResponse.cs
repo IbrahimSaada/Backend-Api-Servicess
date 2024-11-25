@@ -13,5 +13,7 @@ namespace Backend_Api_services.Models.DTOs
         public string text { get; set; }
         public DateTime created_at { get; set; }
         public List<CommentResponse> Replies { get; set; } = new List<CommentResponse>();
+        public CommentResponse ParentComment { get; set; }  // Add this property
+        public bool isHighlighted { get; set; }
     }
 }

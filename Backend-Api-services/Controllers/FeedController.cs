@@ -210,5 +210,57 @@ namespace Backend_Api_services.Controllers
                 .Where(bookmark => bookmark.user_id == userId)
                 .Select(bookmark => bookmark.post_id);
         }
+
+        [HttpGet("Post/{postId}")]
+        public async Task<ActionResult<FeedItemResponse>> GetPostById(int postId, int userId)
+        {
+            // Check if the post exists
+            var post = await _context.Posts.AsNoTracking()
+                .Include(p => p.User)
+                .Include(p => p.Media)
+                .Where(p => p.post_id == postId)
+                .Select(p => new FeedItemResponse
+                {
+                    Type = "post",
+                    ItemId = p.post_id,
+                    CreatedAt = p.created_at,
+                    Content = p.caption,
+                    User = new UserInfo
+                    {
+                        UserId = p.User.user_id,
+                        FullName = p.User.fullname,
+                        Username = p.User.username,
+                        ProfilePictureUrl = p.User.profile_pic
+                    },
+                    Post = new PostInfo
+                    {
+                        PostId = p.post_id,
+                        CreatedAt = p.created_at,
+                        Content = p.caption,
+                        Media = p.Media.Select(media => new PostMediaResponse
+                        {
+                            media_id = media.media_id,
+                            media_url = media.media_url,
+                            media_type = media.media_type,
+                            post_id = media.post_id,
+                            thumbnail_url = media.thumbnail_url
+                        }).ToList(),
+                        LikeCount = p.like_count,
+                        CommentCount = p.comment_count
+                    },
+                    IsLiked = GetUserLikedPostIds(userId).Contains(p.post_id),
+                    IsBookmarked = GetUserBookmarkedPostIds(userId).Contains(p.post_id)
+                })
+                .FirstOrDefaultAsync();
+
+            if (post != null)
+            {
+                return Ok(post);
+            }
+
+            // If no post is found, return 404
+            return NotFound(new { message = "Post not found." });
+        }
+
     }
 }

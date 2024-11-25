@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Backend_Api_services.Services.Interfaces;
 
 namespace Backend_Api_services.Controllers
 {
@@ -18,11 +19,13 @@ namespace Backend_Api_services.Controllers
     {
         private readonly apiDbContext _context;
         private readonly SignatureService _signatureService;
+        private readonly INotificationService _notificationService;
 
-        public SharesController(apiDbContext context, SignatureService signatureService)
+        public SharesController(apiDbContext context, SignatureService signatureService, INotificationService notificationService)
         {
             _context = context;
             _signatureService = signatureService;
+            _notificationService = notificationService;
         }
 
         // POST: api/Shares
@@ -64,9 +67,53 @@ namespace Backend_Api_services.Controllers
                 SharedAt = DateTime.UtcNow,
                 Comment = sharePostDto.Comment
             };
-            post.share_count++;
             _context.SharedPosts.Add(sharedPost);
+            post.share_count++;
             await _context.SaveChangesAsync();
+
+            // **Notification Logic Starts Here**
+
+            var postOwnerId = post.user_id;
+            var sharerId = sharePostDto.UserId;
+
+            // Check if the sharer is not the post owner
+            if (postOwnerId != sharerId)
+            {
+                // Retrieve the sharer's full name
+                var sharer = await _context.users
+                    .FirstOrDefaultAsync(u => u.user_id == sharerId);
+
+                string sharerFullName = sharer?.fullname ?? "Someone";
+
+                string message = $"{sharerFullName} shared your post.";
+
+                // Prepare custom data if needed
+                var data = new Dictionary<string, string>
+        {
+            { "type", "Share" },
+            { "related_entity_id", post.post_id.ToString() },
+            { "shared_post_id", sharedPost.PostId.ToString() } // Adjust if your shared_post entity has a different ID property
+        };
+
+                // Send and save the notification
+                try
+                {
+                    await _notificationService.SendAndSaveNotificationAsync(
+                        recipientUserId: postOwnerId,
+                        senderUserId: sharerId,
+                        type: "Share",
+                        relatedEntityId: post.post_id,
+                        message: message
+                    );
+                }
+                catch (Exception ex)
+                {
+                    // Handle the exception as needed
+                    // Optionally log or ignore
+                }
+            }
+
+            // **Notification Logic Ends Here**
 
             return Ok("Post shared successfully.");
         }
