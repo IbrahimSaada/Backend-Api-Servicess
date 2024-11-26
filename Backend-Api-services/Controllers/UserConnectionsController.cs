@@ -5,6 +5,8 @@ using Backend_Api_services.Models.Entities; // assuming the entity is in this na
 using Backend_Api_services.Services;
 using System.Linq;
 using Microsoft.AspNetCore.Authorization;
+using Backend_Api_services.Services.Interfaces;
+using Microsoft.EntityFrameworkCore;
 
 
     [Route("api/[controller]")]
@@ -13,11 +15,14 @@ using Microsoft.AspNetCore.Authorization;
     public class UserConnectionsController : ControllerBase
     {
         private readonly apiDbContext _context;
-    private readonly SignatureService _signatureService;
-    public UserConnectionsController(apiDbContext context, SignatureService signatureService)
+        private readonly SignatureService _signatureService;
+        private readonly INotificationService _notificationService;
+
+    public UserConnectionsController(apiDbContext context, SignatureService signatureService, INotificationService notificationService)
         {
-            _context = context;
+        _context = context;
         _signatureService = signatureService;
+        _notificationService = notificationService;
     }
 
     // GET: api/Users/search?fullname=searchTerm&currentUserId=1&pageNumber=1&pageSize=10
@@ -83,7 +88,7 @@ using Microsoft.AspNetCore.Authorization;
 
     // POST: api/Users/follow
     [HttpPost("follow")]
-    public ActionResult FollowUser([FromBody] FollowUserDto followUserDto)
+    public async Task<ActionResult> FollowUser([FromBody] FollowUserDto followUserDto)
     {
         // Extract the signature from the request header
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
@@ -126,6 +131,47 @@ using Microsoft.AspNetCore.Authorization;
 
         _context.Followers.Add(follow);
         _context.SaveChanges();
+
+        // **Notification Logic Starts Here**
+
+        // Check if the followed user is already following back
+        var isFollowedUserFollowingBack = _context.Followers.Any(f =>
+            f.followed_user_id == followUserDto.follower_user_id &&
+            f.follower_user_id == followUserDto.followed_user_id &&
+            f.approval_status == "approved");
+
+        // Get the follower's full name
+        string followerFullName = followerUser.fullname;
+
+        // Prepare the notification message
+        string message;
+
+        if (isFollowedUserFollowingBack)
+        {
+            message = $"{followerFullName} started following you.";
+        }
+        else
+        {
+            message = $"{followerFullName} followed you, follow back.";
+        }
+
+        // Send and save the notification
+        try
+        {
+            await _notificationService.SendAndSaveNotificationAsync(
+                recipientUserId: followedUser.user_id,
+                senderUserId: followerUser.user_id,
+                type: "Follow",
+                relatedEntityId: followerUser.user_id, // Pass the follower's user ID
+                message: message
+            );
+        }
+        catch (Exception ex)
+        {
+            // Handle the exception as needed (log or ignore)
+        }
+
+        // **Notification Logic Ends Here**
 
         return Ok($"Follow request {approvalStatus} successfully.");
     }
@@ -253,7 +299,7 @@ using Microsoft.AspNetCore.Authorization;
 
     // PUT: api/Users/update-follower-status
     [HttpPut("update-follower-status")]
-    public ActionResult UpdateFollowerStatus([FromBody] UpdateFollowStatusDto updateFollowStatusDto)
+    public async Task<ActionResult> UpdateFollowerStatus([FromBody] UpdateFollowStatusDto updateFollowStatusDto)
     {
         // Extract the signature from the request header
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
@@ -300,12 +346,40 @@ using Microsoft.AspNetCore.Authorization;
         // Save the changes
         _context.SaveChanges();
 
+        // **Notification Logic Starts Here**
+        if (followRecord.approval_status == "approved")
+        {
+            // Get the followed user's full name
+            var followedUser = await _context.users.FirstOrDefaultAsync(u => u.user_id == updateFollowStatusDto.followed_user_id);
+
+            string followedUserFullName = followedUser?.fullname ?? "Someone";
+
+            string message = $"{followedUserFullName} has accepted your follow request. You can now view their content.";
+
+            // Send and save the notification
+            try
+            {
+                await _notificationService.SendAndSaveNotificationAsync(
+                    recipientUserId: updateFollowStatusDto.follower_user_id,
+                    senderUserId: updateFollowStatusDto.followed_user_id,
+                    type: "Accept",
+                    relatedEntityId: updateFollowStatusDto.followed_user_id, // User who accepted the request
+                    message: message
+                );
+            }
+            catch (Exception ex)
+            {
+                // Handle the exception as needed (log or ignore)
+            }
+        }
+        // **Notification Logic Ends Here**
+
         return Ok($"Follow request {updateFollowStatusDto.approval_status} successfully.");
     }
+  
 
     // GET: api/Users/pending-follow-requests
     [HttpGet("pending-follow-requests")]
-    [AllowAnonymous]
     public ActionResult GetPendingFollowRequests(int currentUserId)
     {
         // Extract the signature from the request header
