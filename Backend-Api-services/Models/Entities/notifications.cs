@@ -17,5 +17,7 @@ namespace Backend_Api_services.Models.Entities
         public string message { get; set; }
         public DateTime created_at { get; set; } = DateTime.UtcNow;
         public bool is_read { get; set; } = false;
+        public DateTime? last_push_sent_at { get; set; }
+        public string aggregated_user_ids { get; set; }
     }
 }
