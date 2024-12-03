@@ -24,7 +24,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllers();
-
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 // Add SignalR services with detailed errors enabled
 builder.Services.AddSignalR(options =>
 {
