@@ -64,8 +64,10 @@ public class PostsController : ControllerBase
 
     // POST: api/Posts/Like
     [HttpPost("Like")]
+    [AllowAnonymous]
     public async Task<IActionResult> LikePost([FromBody] LikeRequest likeRequest)
     {
+        /*
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
         var dataToSign = $"{likeRequest.user_id}:{likeRequest.post_id}";
 
@@ -74,6 +76,7 @@ public class PostsController : ControllerBase
         {
             return Unauthorized("Invalid or missing signature.");
         }
+        */
 
         var postId = likeRequest.post_id;
         var userId = likeRequest.user_id;
@@ -103,38 +106,17 @@ public class PostsController : ControllerBase
 
         await _context.SaveChangesAsync();
 
-        // **Notification Logic Simplified**
-
-        // Get the post owner ID
+        // **Notification Logic Delegated to the Service**
         var postOwnerId = post.user_id;
-
-        // Check if the user is not liking their own post
         if (postOwnerId != userId)
         {
-            // Retrieve the sender's full name
-            var sender = await _context.users
-                .FirstOrDefaultAsync(u => u.user_id == userId);
-
-            string senderFullName = sender?.fullname ?? "Someone";
-
-            string message = $"{senderFullName} liked your post.";
-
-            // Use the NotificationService to send and save the notification
-            try
-            {
-                await _notificationService.SendAndSaveNotificationAsync(
-                    recipientUserId: postOwnerId,
-                    senderUserId: userId,
-                    type: "Like",
-                    relatedEntityId: postId,
-                    message: message
-                );
-            }
-            catch (Exception ex)
-            {
-                // Handle the exception as needed
-                // Optionally log or ignore
-            }
+            await _notificationService.HandleAggregatedNotificationAsync(
+                recipientUserId: postOwnerId,
+                senderUserId: userId,
+                type: "Like",
+                relatedEntityId: postId,
+                action: "liked"
+            );
         }
 
         return Ok("Post liked successfully.");
