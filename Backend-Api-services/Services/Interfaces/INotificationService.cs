@@ -14,5 +14,6 @@ namespace Backend_Api_services.Services.Interfaces
 
         // **Add this method signature**
         Task SendAndSaveNotificationAsync(int recipientUserId, int senderUserId, string type, int? relatedEntityId, string message);
+        Task HandleAggregatedNotificationAsync(int recipientUserId, int senderUserId, string type, int? relatedEntityId, string action);
     }
 }
