@@ -11,9 +11,8 @@ namespace Backend_Api_services.Services.Interfaces
         Task CreateNotificationAsync(Notification notification);
         Task<List<Notification>> GetUserNotificationsAsync(int userId);
         Task MarkAsReadAsync(int notificationId);
-
-        // **Add this method signature**
         Task SendAndSaveNotificationAsync(int recipientUserId, int senderUserId, string type, int? relatedEntityId, string message);
         Task HandleAggregatedNotificationAsync(int recipientUserId, int senderUserId, string type, int? relatedEntityId, string action);
+        Task SendAndSaveNotificationAsync(int recipientUserId, int senderUserId, string type, int? relatedEntityId, int? commentId, string message);
     }
 }

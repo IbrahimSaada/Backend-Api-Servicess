@@ -161,8 +161,10 @@ public class PostsController : ControllerBase
     }
 
     [HttpPost("{postId}/Commenting")]
+    [AllowAnonymous]
     public async Task<IActionResult> AddComment(int postId, [FromBody] CommentRequest commentRequest)
     {
+        /*
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
         var dataToSign = $"{commentRequest.userid}:{postId}:{commentRequest.text}";
 
@@ -171,6 +173,7 @@ public class PostsController : ControllerBase
         {
             return Unauthorized("Invalid or missing signature.");
         }
+        */
 
         var post = await _context.Posts.FindAsync(postId);
         if (post == null)
@@ -191,10 +194,10 @@ public class PostsController : ControllerBase
 
         await _context.SaveChangesAsync();
 
-        // **Notification Logic Starts Here**
+        // **Notification Logic Delegated to the Service**
 
         int recipientUserId = 0;
-        string notificationType = "Comment";
+        string notificationType = "";
         string notificationMessage = "";
 
         var sender = await _context.users.FirstOrDefaultAsync(u => u.user_id == commentRequest.userid);
@@ -224,30 +227,21 @@ public class PostsController : ControllerBase
         {
             try
             {
-                var notification = new Notification
-                {
-                    recipient_user_id = recipientUserId,
-                    sender_user_id = commentRequest.userid,
-                    type = notificationType,
-                    related_entity_id = postId,
-                    comment_id = comment.comment_id, // Include the comment_id
-                    message = notificationMessage,
-                    created_at = DateTime.UtcNow
-                };
-
-                _context.notification.Add(notification);
-                await _context.SaveChangesAsync();
-
-                // Since you're not using the data field, no need to prepare custom data
-                // Proceed to send the push notification if needed
+                await _notificationService.SendAndSaveNotificationAsync(
+                    recipientUserId: recipientUserId,
+                    senderUserId: commentRequest.userid,
+                    type: notificationType,
+                    relatedEntityId: postId,
+                    commentId: comment.comment_id,
+                    message: notificationMessage
+                );
             }
             catch (Exception ex)
             {
                 // Handle the exception as needed
+                
             }
         }
-
-        // **Notification Logic Ends Here**
 
         return CreatedAtAction(nameof(GetComments), new { postId = postId }, new { CommentId = comment.comment_id });
     }
