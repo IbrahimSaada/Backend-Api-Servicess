@@ -14,5 +14,6 @@ namespace Backend_Api_services.Services.Interfaces
         Task SendAndSaveNotificationAsync(int recipientUserId, int senderUserId, string type, int? relatedEntityId, string message);
         Task HandleAggregatedNotificationAsync(int recipientUserId, int senderUserId, string type, int? relatedEntityId, string action);
         Task SendAndSaveNotificationAsync(int recipientUserId, int senderUserId, string type, int? relatedEntityId, int? commentId, string message);
+        Task HandleShareNotificationAsync(int recipientUserId, int senderUserId, int postId, string action);
     }
 }

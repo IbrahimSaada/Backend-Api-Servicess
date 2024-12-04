@@ -1,9 +1,11 @@
-﻿using Backend_Api_services.Models.Data;
+﻿using Amazon.Runtime;
+using Backend_Api_services.Models.Data;
 using Backend_Api_services.Models.DTOs;
 using Backend_Api_services.Models.DTOs.feedDto;
 using Backend_Api_services.Models.Entities;
 using Backend_Api_services.Services;
 using Backend_Api_services.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -262,72 +264,118 @@ namespace Backend_Api_services.Controllers
             return NotFound(new { message = "Post not found." });
         }
 
-        // Inside your FeedController
-
-        [HttpGet("SharedPost/{sharePostId}")]
-        public async Task<ActionResult<FeedItemResponse>> GetSharedPostById(int sharePostId, int userId)
+        [HttpGet("Posts/{postId}/SharedPosts/{userId}")]
+        public async Task<ActionResult<List<FeedItemResponse>>> GetSharedPostsByPostId(
+            int postId,
+            int userId,
+            int pageNumber = 1,
+            int pageSize = 10)
         {
-            // Check if the shared post exists
-            var sharedPost = await _context.SharedPosts.AsNoTracking()
+            // Validate pagination parameters
+            if (pageNumber <= 0) pageNumber = 1;
+            if (pageSize <= 0 || pageSize > 100) pageSize = 10; // Set reasonable limits
+
+            // Validate userId
+            if (userId <= 0)
+            {
+                return Unauthorized(new { message = "Invalid user ID." });
+            }
+
+            // Check if the post exists
+            var post = await _context.Posts.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.post_id == postId);
+
+            if (post == null)
+            {
+                return NotFound(new { message = "Post not found." });
+            }
+
+            // Verify that the userId is the owner of the post
+            if (post.user_id != userId)
+            {
+                // Return 401 explicitly without using Forbid()
+                return Unauthorized(new { message = "You are not authorized to access this resource." });
+            }
+
+            // Query shared posts for the specified postId
+            var sharedPostsQuery = _context.SharedPosts.AsNoTracking()
                 .Include(sp => sp.Sharedby) // The user who shared the post
                 .Include(sp => sp.PostContent)
                     .ThenInclude(p => p.Media)
                 .Include(sp => sp.PostContent.User) // The original post owner
-                .Where(sp => sp.ShareId == sharePostId)
-                .FirstOrDefaultAsync();
+                .Where(sp => sp.PostId == postId && sp.PostContent.user_id == userId) // Ensure the user is the owner of the original post
+                .OrderByDescending(sp => sp.SharedAt);
 
-            if (sharedPost == null)
-            {
-                return NotFound(new { message = "Shared post not found." });
-            }
+            // Apply pagination
+            var sharedPosts = await sharedPostsQuery
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
 
-            // Get user's liked and bookmarked post IDs
-            var userLikedPostIds = GetUserLikedPostIds(userId);
-            var userBookmarkedPostIds = GetUserBookmarkedPostIds(userId);
-
-            // Build the FeedItemResponse
-            var feedItem = new FeedItemResponse
-            {
-                Type = "repost",
-                ItemId = sharedPost.ShareId,
-                CreatedAt = sharedPost.SharedAt,
-                Content = sharedPost.Comment, // Sharer's comment
-                User = new UserInfo
+            // Build the list of FeedItemResponse
+            var feedItems = sharedPosts
+                .Where(sharedPost => sharedPost.PostContent != null && sharedPost.Sharedby != null) // Filter out invalid entries
+                .Select(sharedPost => new FeedItemResponse
                 {
-                    UserId = sharedPost.Sharedby.user_id,
-                    FullName = sharedPost.Sharedby.fullname,
-                    Username = sharedPost.Sharedby.username,
-                    ProfilePictureUrl = sharedPost.Sharedby.profile_pic
-                },
-                // Include PostInfo with Author for reposts
-                Post = new PostInfo
-                {
-                    PostId = sharedPost.PostContent.post_id,
-                    CreatedAt = sharedPost.PostContent.created_at,
-                    Content = sharedPost.PostContent.caption,
-                    Media = sharedPost.PostContent.Media.Select(media => new PostMediaResponse
+                    Type = "repost",
+                    ItemId = sharedPost.ShareId,
+                    CreatedAt = sharedPost.SharedAt,
+                    Content = sharedPost.Comment, // Sharer's comment
+                    User = new UserInfo
                     {
-                        media_id = media.media_id,
-                        media_url = media.media_url,
-                        media_type = media.media_type,
-                        post_id = media.post_id,
-                        thumbnail_url = media.thumbnail_url
-                    }).ToList(),
-                    LikeCount = sharedPost.PostContent.like_count,
-                    CommentCount = sharedPost.PostContent.comment_count,
-                    Author = new UserInfo
+                        UserId = sharedPost.Sharedby?.user_id ?? 0,
+                        FullName = sharedPost.Sharedby?.fullname,
+                        Username = sharedPost.Sharedby?.username,
+                        ProfilePictureUrl = sharedPost.Sharedby?.profile_pic
+                    },
+                    Post = new PostInfo
                     {
-                        UserId = sharedPost.PostContent.User.user_id,
-                        FullName = sharedPost.PostContent.User.fullname,
-                        Username = sharedPost.PostContent.User.username,
-                        ProfilePictureUrl = sharedPost.PostContent.User.profile_pic
-                    }
-                },
-                IsLiked = userLikedPostIds.Contains(sharedPost.PostContent.post_id),
-                IsBookmarked = userBookmarkedPostIds.Contains(sharedPost.PostContent.post_id)
-            };
+                        PostId = sharedPost.PostContent?.post_id ?? 0,
+                        CreatedAt = sharedPost.PostContent?.created_at ?? DateTime.MinValue,
+                        Content = sharedPost.PostContent?.caption,
+                        Media = sharedPost.PostContent?.Media?.Select(media => new PostMediaResponse
+                        {
+                            media_id = media.media_id,
+                            media_url = media.media_url,
+                            media_type = media.media_type,
+                            post_id = media.post_id,
+                            thumbnail_url = media.thumbnail_url
+                        }).ToList() ?? new List<PostMediaResponse>(),
+                        LikeCount = sharedPost.PostContent?.like_count ?? 0,
+                        CommentCount = sharedPost.PostContent?.comment_count ?? 0,
+                        Author = new UserInfo
+                        {
+                            UserId = sharedPost.PostContent?.User?.user_id ?? 0,
+                            FullName = sharedPost.PostContent?.User?.fullname,
+                            Username = sharedPost.PostContent?.User?.username,
+                            ProfilePictureUrl = sharedPost.PostContent?.User?.profile_pic
+                        }
+                    },
+                    IsLiked = false, // Add your logic for "liked" state if necessary
+                    IsBookmarked = false // Add your logic for "bookmarked" state if necessary
+                })
+                .ToList();
 
-            return Ok(feedItem);
+            // Return the list of FeedItemResponse
+            return Ok(feedItems);
+        }
+
+
+
+        private async Task<List<int>> GetUserLikedPostIdsAsync(int userId)
+        {
+            return await _context.Likes.AsNoTracking()
+                .Where(like => like.user_id == userId)
+                .Select(like => like.post_id)
+                .ToListAsync();
+        }
+
+        private async Task<List<int>> GetUserBookmarkedPostIdsAsync(int userId)
+        {
+            return await _context.Bookmarks.AsNoTracking()
+                .Where(bookmark => bookmark.user_id == userId)
+                .Select(bookmark => bookmark.post_id)
+                .ToListAsync();
         }
 
     }

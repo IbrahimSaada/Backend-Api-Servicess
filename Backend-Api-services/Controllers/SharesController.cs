@@ -30,8 +30,10 @@ namespace Backend_Api_services.Controllers
 
         // POST: api/Shares
         [HttpPost]
+        [AllowAnonymous]
         public async Task<IActionResult> SharePost([FromBody] SharePostDto sharePostDto)
         {
+            /*
             // Validate the signature using relevant fields
             string signature = Request.Headers["X-Signature"];
             var dataToSign = $"{sharePostDto.UserId}:{sharePostDto.PostId}:{sharePostDto.Comment}";
@@ -40,6 +42,7 @@ namespace Backend_Api_services.Controllers
             {
                 return Unauthorized("Invalid or missing signature.");
             }
+            */
 
             if (!ModelState.IsValid)
             {
@@ -73,46 +76,20 @@ namespace Backend_Api_services.Controllers
 
             // **Notification Logic Starts Here**
 
-            // **Notification Logic Starts Here**
-
             var postOwnerId = post.user_id;
             var sharerId = sharePostDto.UserId;
 
             // Check if the sharer is not the post owner
             if (postOwnerId != sharerId)
             {
-                // Retrieve the sharer's full name
-                var sharer = await _context.users
-                    .FirstOrDefaultAsync(u => u.user_id == sharerId);
+                string action = "shared";
 
-                string sharerFullName = sharer?.fullname ?? "Someone";
-
-                string message = $"{sharerFullName} shared your post.";
-
-                // Prepare custom data if needed
-                var data = new Dictionary<string, string>
-        {
-            { "type", "Share" },
-            { "related_entity_id", sharedPost.ShareId.ToString() }, // Use sharedPost.shared_post_id here
-            { "original_post_id", post.post_id.ToString() }
-        };
-
-                // Send and save the notification
-                try
-                {
-                    await _notificationService.SendAndSaveNotificationAsync(
-                        recipientUserId: postOwnerId,
-                        senderUserId: sharerId,
-                        type: "Share",
-                        relatedEntityId: sharedPost.ShareId, // Use shared_post_id as the relatedEntityId
-                        message: message
-                    );
-                }
-                catch (Exception ex)
-                {
-                    // Handle the exception as needed
-                    // Optionally log or ignore
-                }
+                await _notificationService.HandleShareNotificationAsync(
+                    recipientUserId: postOwnerId,
+                    senderUserId: sharerId,
+                    postId: post.post_id,
+                    action: action
+                );
             }
 
             // **Notification Logic Ends Here**
