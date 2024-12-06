@@ -286,10 +286,8 @@ using Microsoft.EntityFrameworkCore;
 
     // PUT: api/Users/update-follower-status
     [HttpPut("update-follower-status")]
-    [AllowAnonymous]
     public async Task<ActionResult> UpdateFollowerStatus([FromBody] UpdateFollowStatusDto updateFollowStatusDto)
     {
-        /*
         // Extract the signature from the request header
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
         var dataToSign = $"{updateFollowStatusDto.follower_user_id}:{updateFollowStatusDto.followed_user_id}:{updateFollowStatusDto.approval_status}";
@@ -299,7 +297,6 @@ using Microsoft.EntityFrameworkCore;
         {
             return Unauthorized("Invalid or missing signature.");
         }
-        */
 
         // Input validation to ensure IDs are valid
         if (updateFollowStatusDto.follower_user_id <= 0 || updateFollowStatusDto.followed_user_id <= 0)
