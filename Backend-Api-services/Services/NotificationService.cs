@@ -870,6 +870,201 @@ namespace Backend_Api_services.Services
                 await _context.SaveChangesAsync();
             }
         }
+        public async Task ***REMOVED***(int recipientUserId, int senderUserId, int ***REMOVED***, int ***REMOVED***)
+        {
+            // Define a threshold for how many users can be aggregated in one notification
+            int maxAggregatedUsers = 10;
+            TimeSpan pushCooldown = TimeSpan.FromMinutes(5);
+
+            // Get recipient FCM token
+            var recipientUser = await _context.users.FindAsync(recipientUserId);
+            string recipientFcmToken = recipientUser?.fcm_token;
+
+            // Get sender's full name
+            var senderUser = await _context.users.FindAsync(senderUserId);
+            string senderFullName = senderUser?.fullname ?? "Someone";
+
+            // Check if there is an existing "***REMOVED***" notification for this ***REMOVED***
+            var existingNotification = await _context.notification
+                .FirstOrDefaultAsync(n => n.recipient_user_id == recipientUserId &&
+                                          n.type == "***REMOVED***" &&
+                                          n.related_entity_id == ***REMOVED***);
+
+            if (existingNotification == null)
+            {
+                // No existing notification, create a new aggregated notification
+                var notification = new Models.Entities.Notification
+                {
+                    recipient_user_id = recipientUserId,
+                    sender_user_id = senderUserId,
+                    type = "***REMOVED***",
+                    related_entity_id = ***REMOVED***,
+                    message = $"{senderFullName} ***REMOVED***ed your ***REMOVED***.",
+                    created_at = DateTime.UtcNow,
+                    is_read = false,
+                    last_push_sent_at = DateTime.UtcNow,
+                    aggregated_user_ids = senderUserId.ToString(),
+                    aggregated_***REMOVED***_ids = ***REMOVED***.ToString()
+                };
+
+                _context.notification.Add(notification);
+                await _context.SaveChangesAsync();
+
+                // Send push notification
+                if (!string.IsNullOrEmpty(recipientFcmToken))
+                {
+                    try
+                    {
+                        await SendNotificationAsync(new NotificationRequest
+                        {
+                            Token = recipientFcmToken,
+                            Title = "New ***REMOVED***",
+                            Body = notification.message
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, $"Failed to send push notification to user {recipientUserId}");
+                    }
+                }
+            }
+            else
+            {
+                // Existing notification found, attempt to update it
+
+                // Deserialize user and ***REMOVED*** IDs
+                var userIds = existingNotification.aggregated_user_ids?.Split(',').Select(int.Parse).ToList() ?? new List<int>();
+                var ***REMOVED***s = existingNotification.aggregated_***REMOVED***_ids?.Split(',').Select(int.Parse).ToList() ?? new List<int>();
+
+                // If we have reached the threshold, create a new aggregated notification instead of updating the existing one
+                if (userIds.Count >= maxAggregatedUsers)
+                {
+                    // Create a new aggregated notification because the old one is 'full'
+                    var newNotification = new Models.Entities.Notification
+                    {
+                        recipient_user_id = recipientUserId,
+                        sender_user_id = senderUserId,
+                        type = "***REMOVED***",
+                        related_entity_id = ***REMOVED***,
+                        message = $"{senderFullName} ***REMOVED***ed your ***REMOVED***.",
+                        created_at = DateTime.UtcNow,
+                        is_read = false,
+                        last_push_sent_at = DateTime.UtcNow,
+                        aggregated_user_ids = senderUserId.ToString(),
+                        aggregated_***REMOVED***_ids = ***REMOVED***.ToString()
+                    };
+
+                    _context.notification.Add(newNotification);
+                    await _context.SaveChangesAsync();
+
+                    // Send push notification for the new aggregated notification
+                    if (!string.IsNullOrEmpty(recipientFcmToken))
+                    {
+                        try
+                        {
+                            await SendNotificationAsync(new NotificationRequest
+                            {
+                                Token = recipientUser.fcm_token,
+                                Title = "New ***REMOVED***",
+                                Body = newNotification.message
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, $"Failed to send push notification to user {recipientUserId}");
+                        }
+                    }
+                }
+                else
+                {
+                    // We can still aggregate into the existing notification
+
+                    // Add or move the senderUserId and ***REMOVED*** to the front
+                    if (!userIds.Contains(senderUserId))
+                    {
+                        userIds.Insert(0, senderUserId);
+                    }
+                    else
+                    {
+                        userIds.Remove(senderUserId);
+                        userIds.Insert(0, senderUserId);
+                    }
+
+                    if (!***REMOVED***s.Contains(***REMOVED***))
+                    {
+                        ***REMOVED***s.Insert(0, ***REMOVED***);
+                    }
+                    else
+                    {
+                        ***REMOVED***s.Remove(***REMOVED***);
+                        ***REMOVED***s.Insert(0, ***REMOVED***);
+                    }
+
+                    // Fetch user names
+                    var usersDict = await _context.users
+                        .Where(u => userIds.Contains(u.user_id))
+                        .ToDictionaryAsync(u => u.user_id, u => u.fullname);
+
+                    // Build names in order
+                    var userNames = userIds
+                        .Where(id => usersDict.ContainsKey(id))
+                        .Select(id => usersDict[id])
+                        .ToList();
+
+                    int userCount = userNames.Count;
+                    int namesToDisplay = 2;
+
+                    string message;
+                    if (userCount <= namesToDisplay)
+                    {
+                        message = $"{string.Join(" and ", userNames)} ***REMOVED***ed your ***REMOVED***.";
+                    }
+                    else
+                    {
+                        int othersCount = userCount - namesToDisplay;
+                        var displayedNames = userNames.Take(namesToDisplay);
+                        message = $"{string.Join(", ", displayedNames)}, and {othersCount} others ***REMOVED***ed your ***REMOVED***.";
+                    }
+
+                    // Update notification
+                    existingNotification.message = message;
+                    existingNotification.aggregated_user_ids = string.Join(",", userIds);
+                    existingNotification.aggregated_***REMOVED***_ids = string.Join(",", ***REMOVED***s);
+
+                    _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
+                    _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
+                    _context.Entry(existingNotification).Property(n => n.aggregated_***REMOVED***_ids).IsModified = true;
+
+                    // Check the cooldown for push notifications
+                    if (existingNotification.last_push_sent_at == null ||
+                        DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown)
+                    {
+                        // Send push notification
+                        if (!string.IsNullOrEmpty(recipientFcmToken))
+                        {
+                            try
+                            {
+                                await SendNotificationAsync(new NotificationRequest
+                                {
+                                    Token = recipientUser.fcm_token,
+                                    Title = userCount > 1 ? "New ***REMOVED***s" : "New ***REMOVED***",
+                                    Body = message
+                                });
+
+                                existingNotification.last_push_sent_at = DateTime.UtcNow;
+                                _context.Entry(existingNotification).Property(n => n.last_push_sent_at).IsModified = true;
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, $"Failed to send push notification to user {recipientUserId}");
+                            }
+                        }
+                    }
+
+                    await _context.SaveChangesAsync();
+                }
+            }
+        }
 
 
     }
