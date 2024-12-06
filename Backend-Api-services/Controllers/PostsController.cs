@@ -64,10 +64,8 @@ public class PostsController : ControllerBase
 
     // POST: api/Posts/Like
     [HttpPost("Like")]
-    [AllowAnonymous]
     public async Task<IActionResult> LikePost([FromBody] LikeRequest likeRequest)
     {
-        /*
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
         var dataToSign = $"{likeRequest.user_id}:{likeRequest.post_id}";
 
@@ -76,7 +74,6 @@ public class PostsController : ControllerBase
         {
             return Unauthorized("Invalid or missing signature.");
         }
-        */
 
         var postId = likeRequest.post_id;
         var userId = likeRequest.user_id;
@@ -161,10 +158,8 @@ public class PostsController : ControllerBase
     }
 
     [HttpPost("{postId}/Commenting")]
-    [AllowAnonymous]
     public async Task<IActionResult> AddComment(int postId, [FromBody] CommentRequest commentRequest)
     {
-        /*
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
         var dataToSign = $"{commentRequest.userid}:{postId}:{commentRequest.text}";
 
@@ -173,7 +168,6 @@ public class PostsController : ControllerBase
         {
             return Unauthorized("Invalid or missing signature.");
         }
-        */
 
         var post = await _context.Posts.FindAsync(postId);
         if (post == null)
@@ -474,7 +468,6 @@ public class PostsController : ControllerBase
 
     // Adjusted API method for showing specific replies and parent
     [HttpGet("{postId}/Comments/{commentId}/Thread")]
-    [AllowAnonymous]
     public async Task<ActionResult<CommentResponse>> GetCommentThread(int postId, int commentId)
     {
         // Fetch the comment with the given commentId and postId
