@@ -730,5 +730,147 @@ namespace Backend_Api_services.Services
             }
         }
 
+        public async Task ***REMOVED***(int recipientUserId, int senderUserId, int ***REMOVED***)
+        {
+            // Get recipient FCM token
+            var recipientUser = await _context.users.FindAsync(recipientUserId);
+            string recipientFcmToken = recipientUser?.fcm_token;
+
+            // Get sender's full name
+            var senderUser = await _context.users.FindAsync(senderUserId);
+            string senderFullName = senderUser?.fullname ?? "Someone";
+
+            // Check if there is an existing notification of type "***REMOVED***" for this ***REMOVED***
+            var existingNotification = await _context.notification
+                .FirstOrDefaultAsync(n => n.recipient_user_id == recipientUserId &&
+                                          n.type == "***REMOVED***" &&
+                                          n.related_entity_id == ***REMOVED***);
+
+            if (existingNotification == null)
+            {
+                // No existing notification, create a new one
+                var notification = new Models.Entities.Notification
+                {
+                    recipient_user_id = recipientUserId,
+                    sender_user_id = senderUserId,
+                    type = "***REMOVED***",
+                    related_entity_id = ***REMOVED***,
+                    message = $"{senderFullName} liked your ***REMOVED***.",
+                    created_at = DateTime.UtcNow,
+                    is_read = false,
+                    last_push_sent_at = DateTime.UtcNow,
+                    aggregated_user_ids = senderUserId.ToString()
+                };
+
+                _context.notification.Add(notification);
+                await _context.SaveChangesAsync();
+
+                // Send push notification
+                if (!string.IsNullOrEmpty(recipientFcmToken))
+                {
+                    try
+                    {
+                        await SendNotificationAsync(new NotificationRequest
+                        {
+                            Token = recipientFcmToken,
+                            Title = "***REMOVED***",
+                            Body = notification.message
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, $"Failed to send push notification to user {recipientUserId}");
+                    }
+                }
+            }
+            else
+            {
+                // Existing notification found, update it
+
+                // Deserialize the aggregated_user_ids
+                var userIds = existingNotification.aggregated_user_ids.Split(',')
+                    .Select(id => int.Parse(id))
+                    .ToList();
+
+                // Add or move the senderUserId to the front
+                if (!userIds.Contains(senderUserId))
+                {
+                    userIds.Insert(0, senderUserId);
+                }
+                else
+                {
+                    userIds.Remove(senderUserId);
+                    userIds.Insert(0, senderUserId);
+                }
+
+                // Fetch user names
+                var usersDict = await _context.users
+                    .Where(u => userIds.Contains(u.user_id))
+                    .ToDictionaryAsync(u => u.user_id, u => u.fullname);
+
+                // Build names in order
+                var userNames = userIds
+                    .Where(id => usersDict.ContainsKey(id))
+                    .Select(id => usersDict[id])
+                    .ToList();
+
+                int userCount = userNames.Count;
+                int namesToDisplay = 2;
+
+                string message;
+                if (userCount <= namesToDisplay)
+                {
+                    // If there are 1 or 2 users, list them
+                    message = $"{string.Join(" and ", userNames)} liked your ***REMOVED***.";
+                }
+                else
+                {
+                    // If there are more than 2 users, list the first two and show the count of others
+                    int othersCount = userCount - namesToDisplay;
+                    var displayedNames = userNames.Take(namesToDisplay);
+                    message = $"{string.Join(", ", displayedNames)}, and {othersCount} others liked your ***REMOVED***.";
+                }
+
+                // Update notification
+                existingNotification.message = message;
+                existingNotification.aggregated_user_ids = string.Join(",", userIds);
+
+                // Explicitly mark properties as modified
+                _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
+                _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
+
+                // Decide whether to send a push notification based on cooldown
+                TimeSpan pushCooldown = TimeSpan.FromMinutes(5); // Adjust cooldown period as needed
+                if (existingNotification.last_push_sent_at == null ||
+                    DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown)
+                {
+                    // Send push notification
+                    if (!string.IsNullOrEmpty(recipientFcmToken))
+                    {
+                        try
+                        {
+                            await SendNotificationAsync(new NotificationRequest
+                            {
+                                Token = recipientFcmToken,
+                                Title = "***REMOVED***s",
+                                Body = message
+                            });
+
+                            // Update 'last_push_sent_at' and mark it as modified
+                            existingNotification.last_push_sent_at = DateTime.UtcNow;
+                            _context.Entry(existingNotification).Property(n => n.last_push_sent_at).IsModified = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, $"Failed to send push notification to user {recipientUserId}");
+                        }
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+            }
+        }
+
+
     }
 }

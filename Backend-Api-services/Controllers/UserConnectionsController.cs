@@ -88,10 +88,8 @@ using Microsoft.EntityFrameworkCore;
 
     // POST: api/Users/follow
     [HttpPost("follow")]
-    [AllowAnonymous]
     public async Task<ActionResult> FollowUser([FromBody] FollowUserDto followUserDto)
     {
-        /*
         // Extract the signature from the request header
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
         var dataToSign = $"{followUserDto.follower_user_id}:{followUserDto.followed_user_id}";
@@ -101,7 +99,6 @@ using Microsoft.EntityFrameworkCore;
         {
             return Unauthorized("Invalid or missing signature.");
         }
-        */
 
         // Check if both users exist in the database
         var followedUser = _context.users.FirstOrDefault(u => u.user_id == followUserDto.followed_user_id);
