@@ -18,5 +18,6 @@ namespace Backend_Api_services.Services.Interfaces
         Task HandleFollowNotificationAsync(int recipientUserId, int senderUserId, bool isMutualFollow);
         Task HandleAcceptFollowRequestNotificationAsync(int recipientUserId, int senderUserId);
         Task HandleQuestionLikeNotificationAsync(int recipientUserId, int senderUserId, int questionId);
+        Task HandleAnswerNotificationAsync(int recipientUserId, int senderUserId, int questionId, int answerId);
     }
 }
