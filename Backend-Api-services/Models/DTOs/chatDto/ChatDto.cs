@@ -12,6 +12,10 @@
         public DateTime CreatedAt { get; set; }
         public DateTime deleted_at_initiator { get; set; }
         public DateTime deleted_at_recipient { get; set; }
+
+        public string LastMessage { get; set; }
+        public DateTime LastMessageTime { get; set; }
+        public int UnreadCount { get; set; }
     }
 
 }
