@@ -308,7 +308,7 @@ namespace Backend_Api_services.Hubs
         {
             int initiatorUserId = int.Parse(Context.UserIdentifier);
 
-            // Fetch recipient user's profile to check the is_public status
+            // Fetch recipient user's profile
             var recipientUser = await _context.users.FindAsync(recipientUserId);
             if (recipientUser == null)
             {
@@ -316,10 +316,9 @@ namespace Backend_Api_services.Hubs
                 return;
             }
 
-            // Check if recipient's profile is private and follow approval is required
+            // If recipient's profile is private, verify follow approval
             if (!recipientUser.is_public)
             {
-                // Verify if the initiator has approval to chat with the recipient (either way)
                 var followRelationship = await _context.Followers
                     .FirstOrDefaultAsync(f =>
                         (f.followed_user_id == recipientUserId && f.follower_user_id == initiatorUserId && f.approval_status == "approved") ||
@@ -334,17 +333,69 @@ namespace Backend_Api_services.Hubs
 
             // Check if a chat already exists between these users
             var existingChat = await _context.Chats
-                .FirstOrDefaultAsync(c => (c.user_initiator == initiatorUserId && c.user_recipient == recipientUserId) ||
-                                          (c.user_initiator == recipientUserId && c.user_recipient == initiatorUserId));
+                .FirstOrDefaultAsync(c =>
+                    (c.user_initiator == initiatorUserId && c.user_recipient == recipientUserId) ||
+                    (c.user_initiator == recipientUserId && c.user_recipient == initiatorUserId)
+                );
 
             if (existingChat != null)
             {
-                // Notify the initiator that the chat already exists
-                await Clients.Caller.SendAsync("Error", "Chat already exists with this user.");
-                return;
+                // The chat exists. Check if it was soft-deleted by the current user and restore if necessary.
+                bool restored = false;
+
+                // If the current user was the initiator and had soft-deleted the chat, restore it
+                if (existingChat.user_initiator == initiatorUserId && existingChat.is_deleted_by_initiator)
+                {
+                    existingChat.is_deleted_by_initiator = false;
+                    // Do NOT reset deleted_at_initiator; keep the timestamp so old messages stay filtered
+                    restored = true;
+                }
+
+                // If the current user was the recipient and had soft-deleted the chat, restore it
+                if (existingChat.user_recipient == initiatorUserId && existingChat.is_deleted_by_recipient)
+                {
+                    existingChat.is_deleted_by_recipient = false;
+                    // Do NOT reset deleted_at_recipient; keep the timestamp so old messages stay filtered
+                    restored = true;
+                }
+
+                if (restored)
+                {
+                    // Save changes and notify about the restored chat
+                    await _context.SaveChangesAsync();
+
+                    var chatDto = new ChatDto
+                    {
+                        ChatId = existingChat.chat_id,
+                        InitiatorUserId = existingChat.user_initiator,
+                        RecipientUserId = existingChat.user_recipient,
+                        CreatedAt = existingChat.created_at
+                    };
+
+                    // Notify recipient that chat is restored (if they are connected)
+                    if (_connections.TryGetValue(recipientUserId, out var recipientConnections))
+                    {
+                        await Clients.Clients(recipientConnections).SendAsync("ChatRestored", chatDto);
+                    }
+
+                    // Notify initiator that chat is restored
+                    if (_connections.TryGetValue(initiatorUserId, out var initiatorConnections))
+                    {
+                        await Clients.Clients(initiatorConnections).SendAsync("ChatCreated", chatDto);
+                    }
+
+                    return;
+                }
+                else
+                {
+                    // The chat exists and is not soft-deleted by the current user.
+                    // Therefore, we can't create a new one.
+                    await Clients.Caller.SendAsync("Error", "Chat already exists with this user.");
+                    return;
+                }
             }
 
-            // Create a new chat if allowed
+            // If no chat exists, create a new one
             var chat = new Chat
             {
                 user_initiator = initiatorUserId,
@@ -355,8 +406,7 @@ namespace Backend_Api_services.Hubs
             _context.Chats.Add(chat);
             await _context.SaveChangesAsync();
 
-            // Prepare the chat DTO
-            var chatDto = new ChatDto
+            var newChatDto = new ChatDto
             {
                 ChatId = chat.chat_id,
                 InitiatorUserId = chat.user_initiator,
@@ -365,17 +415,18 @@ namespace Backend_Api_services.Hubs
             };
 
             // Send real-time notification to the recipient
-            if (_connections.TryGetValue(recipientUserId, out var recipientConnections))
+            if (_connections.TryGetValue(recipientUserId, out var recipientConns))
             {
-                await Clients.Clients(recipientConnections).SendAsync("NewChatNotification", chatDto);
+                await Clients.Clients(recipientConns).SendAsync("NewChatNotification", newChatDto);
             }
 
-            // Notify the initiator about the successful chat creation
-            if (_connections.TryGetValue(initiatorUserId, out var initiatorConnections))
+            // Notify initiator about the successful chat creation
+            if (_connections.TryGetValue(initiatorUserId, out var initiatorConns))
             {
-                await Clients.Clients(initiatorConnections).SendAsync("ChatCreated", chatDto);
+                await Clients.Clients(initiatorConns).SendAsync("ChatCreated", newChatDto);
             }
         }
+
 
         // Method to edit a message
         public async Task EditMessage(int messageId, string newContent)
