@@ -26,5 +26,7 @@ namespace Backend_Api_services.Models.Entities
 
         [ForeignKey("user_recipient")]
         public Users RecipientUser { get; set; }
+
+        public virtual ICollection<Messages> Messages { get; set; } = new List<Messages>();
     }
 }

@@ -54,21 +54,56 @@ namespace Backend_Api_services.Controllers
         */
 
 
-        // Fetch all chats for a user
+        // Fetch all chats for a user with last message and unread count
         [HttpGet("get-chats/{userId}")]
         public async Task<IActionResult> GetUserChats(int userId)
         {
+            // Include Messages so we can determine lastMessage and unreadCount.
+            // We'll retrieve all chats that are not soft-deleted for this user.
             var chats = await _context.Chats
                 .Where(c =>
-                    // Include chats where the user is the initiator and hasn't deleted the chat
-                    (c.user_initiator == userId && !c.is_deleted_by_initiator)
-                    ||
-                    // Or where the user is the recipient and hasn't deleted the chat
+                    (c.user_initiator == userId && !c.is_deleted_by_initiator) ||
                     (c.user_recipient == userId && !c.is_deleted_by_recipient)
                 )
                 .Include(c => c.InitiatorUser)
                 .Include(c => c.RecipientUser)
-                .Select(c => new ChatDto
+                .Include(c => c.Messages) // Include messages
+                .ToListAsync();
+
+            var chatDtos = new List<ChatDto>();
+
+            foreach (var c in chats)
+            {
+                bool isInitiator = (c.user_initiator == userId);
+                DateTime? deleteTimestamp = isInitiator ? c.deleted_at_initiator : c.deleted_at_recipient;
+
+                // Filter messages based on deletion logic (similar to FetchMessages)
+                var filteredMessages = c.Messages
+                    .Where(m => !m.is_unsent) // Exclude unsent (deleted) messages
+                    .Where(m =>
+                    {
+                        // Apply deletion timestamp filtering
+                        if (deleteTimestamp.HasValue && m.created_at < deleteTimestamp.Value)
+                            return false;
+                        return true;
+                    })
+                    .ToList();
+
+                // Find the last message (by created_at)
+                var lastMsg = filteredMessages
+                    .OrderByDescending(m => m.created_at)
+                    .FirstOrDefault();
+
+                string lastMessageText = lastMsg?.message_content ?? "";
+                DateTime lastMessageTime = lastMsg?.created_at ?? c.created_at;
+
+                // Count unread messages:
+                // Unread = messages where sender != current user & read_at is null
+                int unreadCount = filteredMessages
+                    .Where(m => m.sender_id != userId && m.read_at == null)
+                    .Count();
+
+                var chatDto = new ChatDto
                 {
                     ChatId = c.chat_id,
                     InitiatorUserId = c.user_initiator,
@@ -79,11 +114,18 @@ namespace Backend_Api_services.Controllers
                     RecipientProfilePic = c.RecipientUser.profile_pic,
                     CreatedAt = c.created_at,
                     deleted_at_initiator = c.deleted_at_initiator ?? default(DateTime),
-                    deleted_at_recipient = c.deleted_at_recipient ?? default(DateTime)
-                })
-                .ToListAsync();
+                    deleted_at_recipient = c.deleted_at_recipient ?? default(DateTime),
 
-            return Ok(chats);
+                    // New fields:
+                    LastMessage = lastMessageText,
+                    LastMessageTime = lastMessageTime,
+                    UnreadCount = unreadCount
+                };
+
+                chatDtos.Add(chatDto);
+            }
+
+            return Ok(chatDtos);
         }
 
 
