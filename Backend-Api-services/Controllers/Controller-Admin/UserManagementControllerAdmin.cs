@@ -21,8 +21,14 @@ public class UserManagementControllerAdmin : ControllerBase
 
     // GET: api/admin/UserManagement/ViewUsers
     [HttpGet("ViewUsers")]
-    public async Task<IActionResult> ViewUsers([FromQuery] UserFilterDTO filter)
+    [AllowAnonymous]
+    public async Task<IActionResult> ViewUsers([FromQuery] UserFilterDTO filter, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
+        if (page < 1 || pageSize < 1)
+        {
+            return BadRequest("Page and pageSize must be greater than 0.");
+        }
+
         IQueryable<Users> query = _context.users;
 
         // Apply time filter if provided
@@ -31,23 +37,41 @@ public class UserManagementControllerAdmin : ControllerBase
             query = query.Where(u => u.verified_at >= filter.StartDate && u.verified_at <= filter.EndDate);
         }
 
-        var users = await query.Select(u => new UserManagementDTO
-        {
-            UserId = u.user_id,
-            Username = u.username,
-            Email = u.email,
-            ProfilePic = u.profile_pic,
-            Bio = u.bio,
-            Rating = u.rating,
-            PhoneNumber = u.phone_number,
-            VerifiedAt = u.verified_at,
-            Dob = u.dob,
-            Gender = u.gender,
-            Fullname = u.fullname
-        }).ToListAsync();
+        // Get total count for pagination metadata
+        var totalCount = await query.CountAsync();
 
-        return Ok(users);
+        // Apply pagination
+        var users = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(u => new UserManagementDTO
+            {
+                UserId = u.user_id,
+                Username = u.username,
+                Email = u.email,
+                ProfilePic = u.profile_pic,
+                Bio = u.bio,
+                Rating = u.rating,
+                PhoneNumber = u.phone_number,
+                VerifiedAt = u.verified_at,
+                Dob = u.dob,
+                Gender = u.gender,
+                Fullname = u.fullname
+            })
+            .ToListAsync();
+
+        // Pagination metadata
+        var metadata = new
+        {
+            totalCount,
+            pageSize,
+            currentPage = page,
+            totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+        };
+
+        return Ok(new { metadata, data = users });
     }
+
 
     // PUT: api/admin/UserManagement/UpdateUser/5
     [HttpPut("UpdateUser/{id}")]
