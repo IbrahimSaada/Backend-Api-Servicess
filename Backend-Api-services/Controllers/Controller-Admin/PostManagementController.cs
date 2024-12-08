@@ -32,14 +32,28 @@ namespace Backend_Api_services.Controllers
         // GET: api/Posts/display
         [HttpGet("display")]
         [AllowAnonymous] // Allows anyone to access this endpoint without authentication
-        public async Task<ActionResult<IEnumerable<PostResponse>>> GetPosts()
+        public async Task<ActionResult<IEnumerable<PostResponse>>> GetPosts([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
         {
-            // Fetch all public posts from the database
+            // Ensure valid pagination parameters
+            if (page < 1 || pageSize < 1)
+            {
+                return BadRequest("Page and pageSize must be greater than 0.");
+            }
+
+            // Calculate the number of items to skip
+            var skip = (page - 1) * pageSize;
+
+            // Fetch total count for pagination metadata
+            var totalPosts = await _context.Posts.Where(p => p.is_public).CountAsync();
+
+            // Fetch paginated public posts from the database
             var posts = await _context.Posts
                                       .Include(p => p.User)
                                       .Include(p => p.Media)
                                       .Where(p => p.is_public) // Only public posts
                                       .OrderByDescending(p => p.created_at)
+                                      .Skip(skip)
+                                      .Take(pageSize)
                                       .ToListAsync();
 
             // Convert posts to PostResponse DTO format
@@ -63,8 +77,17 @@ namespace Backend_Api_services.Controllers
                 }).ToList()
             }).ToList();
 
-            // Return the list of posts
-            return Ok(postResponses);
+            // Add pagination metadata
+            var metadata = new
+            {
+                totalCount = totalPosts,
+                pageSize,
+                currentPage = page,
+                totalPages = (int)Math.Ceiling(totalPosts / (double)pageSize)
+            };
+
+            // Return the list of posts with metadata
+            return Ok(new { metadata, data = postResponses });
         }
     }
 }
