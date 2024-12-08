@@ -10,6 +10,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Backend_Api_services.Models.DTOs.messageDto;
 using Backend_Api_services.Models.DTOs.chatDto;
+using Backend_Api_services.Services;
 
 namespace Backend_Api_services.Hubs
 {
@@ -20,10 +21,12 @@ namespace Backend_Api_services.Hubs
         private static readonly ConcurrentDictionary<int, HashSet<string>> _connections = new ConcurrentDictionary<int, HashSet<string>>();
 
         private readonly apiDbContext _context;
+        private readonly SignatureService _signatureService;
 
-        public ChatHub(apiDbContext context)
+        public ChatHub(apiDbContext context, SignatureService signatureService)
         {
             _context = context;
+            _signatureService = signatureService;
         }
 
         // Method called when a user connects
@@ -93,7 +96,7 @@ namespace Backend_Api_services.Hubs
             await base.OnDisconnectedAsync(exception);
         }
 
-        // Method to fetch messages for a specific chat
+        // Method to fetch messages for a specific chat (Read-only, so no signature required)
         public async Task<List<MessageDto>> FetchMessages(int chatId, int pageNumber = 1, int pageSize = 20)
         {
             int userId = int.Parse(Context.UserIdentifier);
@@ -117,22 +120,19 @@ namespace Backend_Api_services.Hubs
             else if (chat.user_recipient == userId)
                 deleteTimestamp = chat.deleted_at_recipient;
 
-            // Fetch messages with pagination, applying the deletion timestamp filter if necessary
             var messagesQuery = _context.Messages
                 .Where(m => m.chat_id == chatId);
 
-            // Apply the deletion timestamp filter to show only messages after the last deletion
             if (deleteTimestamp.HasValue)
             {
                 messagesQuery = messagesQuery.Where(m => m.created_at >= deleteTimestamp.Value);
-
             }
 
             var messages = await messagesQuery
-                .OrderByDescending(m => m.created_at) // Get messages in reverse chronological order
+                .OrderByDescending(m => m.created_at)
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
-                            .Select(m => new MessageDto
+                .Select(m => new MessageDto
                 {
                     MessageId = m.message_id,
                     ChatId = m.chat_id,
@@ -154,12 +154,18 @@ namespace Backend_Api_services.Hubs
             return messages;
         }
 
-
-
         // Method to send a message to a specific user
-        public async Task SendMessage(int recipientUserId, string messageContent, string messageType, List<MediaItemDto> mediaItems)
+        public async Task SendMessage(int recipientUserId, string messageContent, string messageType, List<MediaItemDto> mediaItems, string signature)
         {
             int senderId = int.Parse(Context.UserIdentifier);
+
+            // Validate signature
+            var dataToSign = $"{senderId}:{recipientUserId}:{messageContent}";
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                await Clients.Caller.SendAsync("Error", "Invalid or missing signature.");
+                return;
+            }
 
             // Check if the sender is allowed to chat with the recipient
             var followedUser = await _context.Followers
@@ -173,14 +179,13 @@ namespace Backend_Api_services.Hubs
                 return;
             }
 
-            // Find or create the chat between the sender and recipient
+            // Find or create the chat
             var chat = await _context.Chats.FirstOrDefaultAsync(c =>
                 (c.user_initiator == senderId && c.user_recipient == recipientUserId) ||
                 (c.user_initiator == recipientUserId && c.user_recipient == senderId));
 
             if (chat == null)
             {
-                // Create a new chat if it doesn't exist
                 chat = new Chat
                 {
                     user_initiator = senderId,
@@ -191,7 +196,6 @@ namespace Backend_Api_services.Hubs
             }
             else
             {
-                // Reset the deletion flag for the recipient
                 if (chat.user_initiator == recipientUserId && chat.is_deleted_by_initiator)
                 {
                     chat.is_deleted_by_initiator = false;
@@ -201,14 +205,12 @@ namespace Backend_Api_services.Hubs
                     chat.is_deleted_by_recipient = false;
                 }
 
-                // Ensure that deletion timestamps are not modified
                 _context.Entry(chat).Property(c => c.deleted_at_initiator).IsModified = false;
                 _context.Entry(chat).Property(c => c.deleted_at_recipient).IsModified = false;
             }
 
             await _context.SaveChangesAsync();
 
-            // Create the message
             var message = new Messages
             {
                 chat_id = chat.chat_id,
@@ -221,7 +223,6 @@ namespace Backend_Api_services.Hubs
             _context.Messages.Add(message);
             await _context.SaveChangesAsync();
 
-            // Add media items if any
             if (mediaItems != null && mediaItems.Any())
             {
                 foreach (var mediaItem in mediaItems)
@@ -237,7 +238,6 @@ namespace Backend_Api_services.Hubs
                 await _context.SaveChangesAsync();
             }
 
-            // Prepare the message DTO to send to clients
             var messageDto = new MessageDto
             {
                 MessageId = message.message_id,
@@ -246,18 +246,16 @@ namespace Backend_Api_services.Hubs
                 MessageType = message.message_type,
                 MessageContent = message.message_content,
                 CreatedAt = message.created_at,
-                MediaItems = mediaItems, // Include media items with media types
+                MediaItems = mediaItems,
                 IsEdited = message.is_edited,
                 IsUnsent = message.is_unsent
             };
 
-            // Send the message to the recipient if they are connected
             if (_connections.TryGetValue(recipientUserId, out var recipientConnections))
             {
                 await Clients.Clients(recipientConnections).SendAsync("ReceiveMessage", messageDto);
             }
 
-            // Send the message back to the sender
             if (_connections.TryGetValue(senderId, out var senderConnections))
             {
                 await Clients.Clients(senderConnections).SendAsync("MessageSent", messageDto);
@@ -265,9 +263,17 @@ namespace Backend_Api_services.Hubs
         }
 
         // Method to handle typing indicators
-        public async Task Typing(int recipientUserId)
+        public async Task Typing(int recipientUserId, string signature)
         {
             int senderId = int.Parse(Context.UserIdentifier);
+
+            // Validate signature
+            var dataToSign = $"{senderId}:{recipientUserId}";
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                await Clients.Caller.SendAsync("Error", "Invalid or missing signature.");
+                return;
+            }
 
             if (_connections.TryGetValue(recipientUserId, out var recipientConnections))
             {
@@ -276,9 +282,17 @@ namespace Backend_Api_services.Hubs
         }
 
         // Method to mark messages as read
-        public async Task MarkMessagesAsRead(int chatId)
+        public async Task MarkMessagesAsRead(int chatId, string signature)
         {
             int userId = int.Parse(Context.UserIdentifier);
+
+            // Validate signature
+            var dataToSign = $"{userId}:{chatId}";
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                await Clients.Caller.SendAsync("Error", "Invalid or missing signature.");
+                return;
+            }
 
             var messages = await _context.Messages
                 .Where(m => m.chat_id == chatId && m.sender_id != userId && m.read_at == null)
@@ -291,7 +305,6 @@ namespace Backend_Api_services.Hubs
 
             await _context.SaveChangesAsync();
 
-            // Notify the sender(s) that messages have been read
             var senderIds = messages.Select(m => m.sender_id).Distinct();
 
             foreach (var senderId in senderIds)
@@ -304,11 +317,18 @@ namespace Backend_Api_services.Hubs
         }
 
         // create chat
-        public async Task CreateChat(int recipientUserId)
+        public async Task CreateChat(int recipientUserId, string signature)
         {
             int initiatorUserId = int.Parse(Context.UserIdentifier);
 
-            // Fetch recipient user's profile
+            // Validate signature
+            var dataToSign = $"{initiatorUserId}:{recipientUserId}";
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                await Clients.Caller.SendAsync("Error", "Invalid or missing signature.");
+                return;
+            }
+
             var recipientUser = await _context.users.FindAsync(recipientUserId);
             if (recipientUser == null)
             {
@@ -316,7 +336,6 @@ namespace Backend_Api_services.Hubs
                 return;
             }
 
-            // If recipient's profile is private, verify follow approval
             if (!recipientUser.is_public)
             {
                 var followRelationship = await _context.Followers
@@ -331,7 +350,6 @@ namespace Backend_Api_services.Hubs
                 }
             }
 
-            // Check if a chat already exists between these users
             var existingChat = await _context.Chats
                 .FirstOrDefaultAsync(c =>
                     (c.user_initiator == initiatorUserId && c.user_recipient == recipientUserId) ||
@@ -340,28 +358,22 @@ namespace Backend_Api_services.Hubs
 
             if (existingChat != null)
             {
-                // The chat exists. Check if it was soft-deleted by the current user and restore if necessary.
                 bool restored = false;
 
-                // If the current user was the initiator and had soft-deleted the chat, restore it
                 if (existingChat.user_initiator == initiatorUserId && existingChat.is_deleted_by_initiator)
                 {
                     existingChat.is_deleted_by_initiator = false;
-                    // Do NOT reset deleted_at_initiator; keep the timestamp so old messages stay filtered
                     restored = true;
                 }
 
-                // If the current user was the recipient and had soft-deleted the chat, restore it
                 if (existingChat.user_recipient == initiatorUserId && existingChat.is_deleted_by_recipient)
                 {
                     existingChat.is_deleted_by_recipient = false;
-                    // Do NOT reset deleted_at_recipient; keep the timestamp so old messages stay filtered
                     restored = true;
                 }
 
                 if (restored)
                 {
-                    // Save changes and notify about the restored chat
                     await _context.SaveChangesAsync();
 
                     var chatDto = new ChatDto
@@ -372,13 +384,11 @@ namespace Backend_Api_services.Hubs
                         CreatedAt = existingChat.created_at
                     };
 
-                    // Notify recipient that chat is restored (if they are connected)
                     if (_connections.TryGetValue(recipientUserId, out var recipientConnections))
                     {
                         await Clients.Clients(recipientConnections).SendAsync("ChatRestored", chatDto);
                     }
 
-                    // Notify initiator that chat is restored
                     if (_connections.TryGetValue(initiatorUserId, out var initiatorConnections))
                     {
                         await Clients.Clients(initiatorConnections).SendAsync("ChatCreated", chatDto);
@@ -388,14 +398,11 @@ namespace Backend_Api_services.Hubs
                 }
                 else
                 {
-                    // The chat exists and is not soft-deleted by the current user.
-                    // Therefore, we can't create a new one.
                     await Clients.Caller.SendAsync("Error", "Chat already exists with this user.");
                     return;
                 }
             }
 
-            // If no chat exists, create a new one
             var chat = new Chat
             {
                 user_initiator = initiatorUserId,
@@ -414,24 +421,29 @@ namespace Backend_Api_services.Hubs
                 CreatedAt = chat.created_at
             };
 
-            // Send real-time notification to the recipient
             if (_connections.TryGetValue(recipientUserId, out var recipientConns))
             {
                 await Clients.Clients(recipientConns).SendAsync("NewChatNotification", newChatDto);
             }
 
-            // Notify initiator about the successful chat creation
             if (_connections.TryGetValue(initiatorUserId, out var initiatorConns))
             {
                 await Clients.Clients(initiatorConns).SendAsync("ChatCreated", newChatDto);
             }
         }
 
-
         // Method to edit a message
-        public async Task EditMessage(int messageId, string newContent)
+        public async Task EditMessage(int messageId, string newContent, string signature)
         {
             int userId = int.Parse(Context.UserIdentifier);
+
+            // Validate signature
+            var dataToSign = $"{userId}:{messageId}:{newContent}";
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                await Clients.Caller.SendAsync("Error", "Invalid or missing signature.");
+                return;
+            }
 
             var message = await _context.Messages.Include(m => m.Chats).FirstOrDefaultAsync(m => m.message_id == messageId);
 
@@ -446,7 +458,6 @@ namespace Backend_Api_services.Hubs
 
             await _context.SaveChangesAsync();
 
-            // Prepare the message DTO
             var messageDto = new MessageDto
             {
                 MessageId = message.message_id,
@@ -460,7 +471,6 @@ namespace Backend_Api_services.Hubs
                 MediaUrls = message.MediaItems?.Select(mi => mi.media_url).ToList()
             };
 
-            // Notify both sender and recipient about the edited message
             int recipientUserId = message.Chats.user_initiator == userId ? message.Chats.user_recipient : message.Chats.user_initiator;
 
             if (_connections.TryGetValue(recipientUserId, out var recipientConnections))
@@ -475,9 +485,17 @@ namespace Backend_Api_services.Hubs
         }
 
         // Method to unsend a message
-        public async Task UnsendMessage(int messageId)
+        public async Task UnsendMessage(int messageId, string signature)
         {
             int userId = int.Parse(Context.UserIdentifier);
+
+            // Validate signature
+            var dataToSign = $"{userId}:{messageId}";
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                await Clients.Caller.SendAsync("Error", "Invalid or missing signature.");
+                return;
+            }
 
             var message = await _context.Messages.Include(m => m.Chats).FirstOrDefaultAsync(m => m.message_id == messageId);
 
@@ -488,10 +506,8 @@ namespace Backend_Api_services.Hubs
             }
 
             message.is_unsent = true;
-
             await _context.SaveChangesAsync();
 
-            // Notify both sender and recipient about the unsent message
             int recipientUserId = message.Chats.user_initiator == userId ? message.Chats.user_recipient : message.Chats.user_initiator;
 
             if (_connections.TryGetValue(recipientUserId, out var recipientConnections))
