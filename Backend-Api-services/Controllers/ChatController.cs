@@ -1,65 +1,45 @@
 ﻿using Backend_Api_services.Models.Data;
 using Backend_Api_services.Models.DTOs.chatDto;
 using Backend_Api_services.Models.Entities;
+using Backend_Api_services.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-
+using System.Linq;
 
 namespace Backend_Api_services.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class ChatController : ControllerBase
     {
         private readonly apiDbContext _context;
+        private readonly SignatureService _signatureService;
 
-        public ChatController(apiDbContext context)
+        public ChatController(apiDbContext context, SignatureService signatureService)
         {
             _context = context;
+            _signatureService = signatureService;
         }
-        /*
-        // Create a new chat this endpoint is depracted
-        [HttpPost("create-chat")]
-        public async Task<IActionResult> CreateChat([FromBody] CreateChatDto dto)
-        {
-            var followedUser = await _context.Followers
-                .FirstOrDefaultAsync(f => f.followed_user_id == dto.RecipientUserId
-                                       && f.follower_user_id == dto.InitiatorUserId
-                                       && f.approval_status == "approved");
-
-            if (followedUser == null)
-            {
-                return StatusCode(403, "You cannot chat with this user until they approve your follow request.");
-            }
-
-            // Proceed to create the chat if approved
-            var chat = new Chat
-            {
-                user_initiator = dto.InitiatorUserId,
-                user_recipient = dto.RecipientUserId,
-                created_at = DateTime.UtcNow
-            };
-
-            _context.Chats.Add(chat);
-            await _context.SaveChangesAsync();
-
-            return Ok(new ChatDto
-            {
-                ChatId = chat.chat_id,
-                InitiatorUserId = chat.user_initiator,
-                RecipientUserId = chat.user_recipient,
-                CreatedAt = chat.created_at
-            });
-        }
-        */
-
 
         // Fetch all chats for a user with last message and unread count
         [HttpGet("get-chats/{userId}")]
         public async Task<IActionResult> GetUserChats(int userId)
         {
+            // Extract the signature from headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            // Construct the dataToSign. Here we only have userId for simplicity.
+            // If you want more complexity (like a timestamp), include it in the dataToSign as well.
+            var dataToSign = $"{userId}";
+
+            // Validate signature
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             // Include Messages so we can determine lastMessage and unreadCount.
-            // We'll retrieve all chats that are not soft-deleted for this user.
             var chats = await _context.Chats
                 .Where(c =>
                     (c.user_initiator == userId && !c.is_deleted_by_initiator) ||
@@ -67,7 +47,7 @@ namespace Backend_Api_services.Controllers
                 )
                 .Include(c => c.InitiatorUser)
                 .Include(c => c.RecipientUser)
-                .Include(c => c.Messages) // Include messages
+                .Include(c => c.Messages)
                 .ToListAsync();
 
             var chatDtos = new List<ChatDto>();
@@ -77,19 +57,16 @@ namespace Backend_Api_services.Controllers
                 bool isInitiator = (c.user_initiator == userId);
                 DateTime? deleteTimestamp = isInitiator ? c.deleted_at_initiator : c.deleted_at_recipient;
 
-                // Filter messages based on deletion logic (similar to FetchMessages)
                 var filteredMessages = c.Messages
-                    .Where(m => !m.is_unsent) // Exclude unsent (deleted) messages
+                    .Where(m => !m.is_unsent)
                     .Where(m =>
                     {
-                        // Apply deletion timestamp filtering
                         if (deleteTimestamp.HasValue && m.created_at < deleteTimestamp.Value)
                             return false;
                         return true;
                     })
                     .ToList();
 
-                // Find the last message (by created_at)
                 var lastMsg = filteredMessages
                     .OrderByDescending(m => m.created_at)
                     .FirstOrDefault();
@@ -97,8 +74,6 @@ namespace Backend_Api_services.Controllers
                 string lastMessageText = lastMsg?.message_content ?? "";
                 DateTime lastMessageTime = lastMsg?.created_at ?? c.created_at;
 
-                // Count unread messages:
-                // Unread = messages where sender != current user & read_at is null
                 int unreadCount = filteredMessages
                     .Where(m => m.sender_id != userId && m.read_at == null)
                     .Count();
@@ -115,8 +90,6 @@ namespace Backend_Api_services.Controllers
                     CreatedAt = c.created_at,
                     deleted_at_initiator = c.deleted_at_initiator ?? default(DateTime),
                     deleted_at_recipient = c.deleted_at_recipient ?? default(DateTime),
-
-                    // New fields:
                     LastMessage = lastMessageText,
                     LastMessageTime = lastMessageTime,
                     UnreadCount = unreadCount
@@ -128,11 +101,22 @@ namespace Backend_Api_services.Controllers
             return Ok(chatDtos);
         }
 
-
         [HttpGet("{userId}/contacts")]
         public async Task<ActionResult> GetContacts(int userId, string search = "", int pageNumber = 1, int pageSize = 10)
         {
-            // Fetch followers
+            // Extract the signature
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+
+            // Include all query parameters in dataToSign to ensure they haven't been tampered with
+            // For example: userId:search:pageNumber:pageSize
+            // If search can contain colons, you may want a different delimiter or URL-encode it first.
+            var dataToSign = $"{userId}:{search}:{pageNumber}:{pageSize}";
+
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             var followers = await _context.Followers
                 .Where(f => f.followed_user_id == userId && !f.is_dismissed)
                 .Select(f => new ViewContacsDto
@@ -143,7 +127,6 @@ namespace Backend_Api_services.Controllers
                 })
                 .ToListAsync();
 
-            // Fetch following
             var following = await _context.Followers
                 .Where(f => f.follower_user_id == userId && !f.is_dismissed)
                 .Select(f => new ViewContacsDto
@@ -154,14 +137,12 @@ namespace Backend_Api_services.Controllers
                 })
                 .ToListAsync();
 
-            // Combine both lists and remove duplicates based on UserId
             var allContacts = followers
                 .Concat(following)
                 .GroupBy(c => c.UserId)
                 .Select(g => g.First())
                 .ToList();
 
-            // Apply search if a search term is provided
             if (!string.IsNullOrEmpty(search))
             {
                 allContacts = allContacts
@@ -169,10 +150,8 @@ namespace Backend_Api_services.Controllers
                     .ToList();
             }
 
-            // Calculate total records after search filtering
             var totalRecords = allContacts.Count;
 
-            // Apply pagination in memory
             var paginatedContacts = allContacts
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
@@ -187,11 +166,18 @@ namespace Backend_Api_services.Controllers
             });
         }
 
-
         // Soft delete a chat
         [HttpPost("delete-chat")]
         public async Task<IActionResult> DeleteChat([FromBody] DeleteChatDto dto)
         {
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            var dataToSign = $"{dto.UserId}:{dto.ChatId}";
+
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             var chat = await _context.Chats.FindAsync(dto.ChatId);
 
             if (chat == null)
@@ -217,6 +203,5 @@ namespace Backend_Api_services.Controllers
             await _context.SaveChangesAsync();
             return Ok("Chat deleted successfully.");
         }
-
     }
 }
