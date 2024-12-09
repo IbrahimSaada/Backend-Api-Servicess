@@ -19,5 +19,6 @@ namespace Backend_Api_services.Services.Interfaces
         Task HandleAcceptFollowRequestNotificationAsync(int recipientUserId, int senderUserId);
         Task HandleQuestionLikeNotificationAsync(int recipientUserId, int senderUserId, int questionId);
         Task HandleAnswerNotificationAsync(int recipientUserId, int senderUserId, int questionId, int answerId);
+        Task HandleCommentNotificationAsync(int recipientUserId, int senderUserId, int postId, int commentId, string notificationType);
     }
 }

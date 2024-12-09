@@ -14,6 +14,7 @@ namespace Backend_Api_services.Models.Entities
         public string type { get; set; }
         public int? related_entity_id { get; set; }
         public int? comment_id { get; set; }
+        public string? aggregated_comment_ids { get; set; }
         public string message { get; set; }
         public DateTime created_at { get; set; } = DateTime.UtcNow;
         public bool is_read { get; set; } = false;
