@@ -191,28 +191,35 @@ public class PostsController : ControllerBase
         // **Notification Logic Delegated to the Service**
 
         int recipientUserId = 0;
-        string notificationType = "";
-        string notificationMessage = "";
+        string notificationType;
+        string notificationMessage;
 
+        // Identify whether this is a top-level comment or a reply
         var sender = await _context.users.FirstOrDefaultAsync(u => u.user_id == commentRequest.userid);
-        string senderFullName = sender?.fullname ?? "Someone";
+        var senderFullName = sender?.fullname ?? "Someone";
 
         if (commentRequest.parentcommentid == null)
         {
-            // It's a top-level comment
+            // Top-level comment
             recipientUserId = post.user_id;
             notificationType = "Comment";
             notificationMessage = $"{senderFullName} commented on your post.";
         }
         else
         {
-            // It's a reply to a comment
+            // Reply to a comment
             var parentComment = await _context.Comments.FindAsync(commentRequest.parentcommentid);
             if (parentComment != null)
             {
                 recipientUserId = parentComment.user_id;
                 notificationType = "Reply";
                 notificationMessage = $"{senderFullName} replied to your comment.";
+            }
+            else
+            {
+                // If parent comment doesn't exist, no notification is sent
+                // (Alternatively, return a NotFound error if needed)
+                return CreatedAtAction(nameof(GetComments), new { postId = postId }, new { CommentId = comment.comment_id });
             }
         }
 
@@ -221,19 +228,25 @@ public class PostsController : ControllerBase
         {
             try
             {
-                await _notificationService.SendAndSaveNotificationAsync(
+                // Here we assume we have aggregator logic similar to ***REMOVED***s:
+                // For comments, we might have a method like HandleCommentNotificationAsync
+                // that handles both "Comment" and "Reply" notification aggregation.
+                // You will need to implement this method in the NotificationService similarly
+                // to how ***REMOVED*** was done.
+
+                await _notificationService.HandleCommentNotificationAsync(
                     recipientUserId: recipientUserId,
                     senderUserId: commentRequest.userid,
-                    type: notificationType,
-                    relatedEntityId: postId,
+                    postId: postId,
                     commentId: comment.comment_id,
-                    message: notificationMessage
+                    notificationType: notificationType
                 );
             }
             catch (Exception ex)
             {
-                // Handle the exception as needed
-                
+                // Log the exception
+                //_logger.LogError(ex, "Failed to handle comment notification.");
+                // We do not fail the request just because the notification didn't send
             }
         }
 
@@ -466,27 +479,58 @@ public class PostsController : ControllerBase
         return Ok("Bookmark removed successfully.");
     }
 
-    // Adjusted API method for showing specific replies and parent
-    [HttpGet("{postId}/Comments/{commentId}/Thread")]
-    public async Task<ActionResult<CommentResponse>> GetCommentThread(int postId, int commentId)
+    [HttpGet("{postId}/Comments/Threads")]
+    public async Task<ActionResult<List<CommentResponse>>> GetCommentThreadsByIds(int postId, [FromQuery] string ids)
     {
-        // Fetch the comment with the given commentId and postId
-        var comment = await _context.Comments
-            .Include(c => c.User)
-            .FirstOrDefaultAsync(c => c.comment_id == commentId && c.post_id == postId);
-
-        if (comment == null)
+        // Validate input
+        if (string.IsNullOrEmpty(ids))
         {
-            return NotFound("Comment not found.");
+            return BadRequest("No comment IDs provided.");
+        }
+        // Validate the signature (optional, if required in your use case)
+        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        var dataToSign = $"{ids}";
+        if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+        {
+            return Unauthorized("Invalid or missing signature.");
         }
 
-        // Build the minimal thread structure
-        var minimalThread = await BuildMinimalCommentThread(comment);
 
-        return Ok(minimalThread);
+        // Parse and validate the comment IDs
+        var commentIds = ids.Split(',')
+            .Select(id => id.Trim())
+            .Where(id => int.TryParse(id, out _))
+            .Select(int.Parse)
+            .ToList();
+
+        if (!commentIds.Any())
+        {
+            return BadRequest("No valid comment IDs provided.");
+        }
+
+        // Fetch all matching comments for the given post
+        var comments = await _context.Comments
+            .Include(c => c.User)
+            .Where(c => commentIds.Contains(c.comment_id) && c.post_id == postId)
+            .ToListAsync();
+
+        if (!comments.Any())
+        {
+            return NotFound("No comments found for the provided IDs.");
+        }
+
+        // Build threads for each comment
+        var threads = new List<CommentResponse>();
+        foreach (var comment in comments)
+        {
+            var thread = await BuildMinimalCommentThread(comment);
+            threads.Add(thread);
+        }
+
+        return Ok(threads);
     }
 
-    // Helper method to fetch the specific comment, its parent, and the last reply
+    // Helper method remains unchanged
     private async Task<CommentResponse> BuildMinimalCommentThread(Comment comment)
     {
         var commentResponse = new CommentResponse
@@ -498,12 +542,12 @@ public class PostsController : ControllerBase
             userprofilepic = comment.User.profile_pic,
             text = comment.text,
             created_at = comment.created_at,
-            isHighlighted = true, // Always highlight the requested comment
+            isHighlighted = true,
             Replies = new List<CommentResponse>(),
             ParentComment = null
         };
 
-        // If the comment has a parent, fetch the parent
+        // Fetch the parent comment if it exists
         if (comment.parent_comment_id.HasValue)
         {
             var parentComment = await _context.Comments
@@ -521,14 +565,14 @@ public class PostsController : ControllerBase
                     userprofilepic = parentComment.User.profile_pic,
                     text = parentComment.text,
                     created_at = parentComment.created_at,
-                    isHighlighted = false, // Parent comment is not highlighted
+                    isHighlighted = false,
                     Replies = null,
                     ParentComment = null
                 };
             }
         }
 
-        // If the comment is a parent, fetch the latest reply
+        // Fetch the latest reply to this comment
         var latestReply = await _context.Comments
             .Include(c => c.User)
             .Where(c => c.parent_comment_id == comment.comment_id)
@@ -546,7 +590,7 @@ public class PostsController : ControllerBase
                 userprofilepic = latestReply.User.profile_pic,
                 text = latestReply.text,
                 created_at = latestReply.created_at,
-                isHighlighted = false, // Replies are not highlighted
+                isHighlighted = false,
                 Replies = null,
                 ParentComment = null
             };

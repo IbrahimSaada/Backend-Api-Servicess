@@ -19,5 +19,6 @@ namespace Backend_Api_services.Services.Interfaces
         Task HandleAcceptFollowRequestNotificationAsync(int recipientUserId, int senderUserId);
         Task ***REMOVED***(int recipientUserId, int senderUserId, int ***REMOVED***);
         Task ***REMOVED***(int recipientUserId, int senderUserId, int ***REMOVED***, int ***REMOVED***);
+        Task HandleCommentNotificationAsync(int recipientUserId, int senderUserId, int postId, int commentId, string notificationType);
     }
 }

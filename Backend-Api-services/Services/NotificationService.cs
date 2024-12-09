@@ -1066,6 +1066,175 @@ namespace Backend_Api_services.Services
             }
         }
 
+        public async Task HandleCommentNotificationAsync(int recipientUserId, int senderUserId, int postId, int commentId, string notificationType)
+        {
+            TimeSpan pushCooldown = TimeSpan.FromMinutes(5);
+            int maxAggregatedUsers = 10;
+
+            var recipientUser = await _context.users.FindAsync(recipientUserId);
+            string recipientFcmToken = recipientUser?.fcm_token;
+            var senderUser = await _context.users.FindAsync(senderUserId);
+            string senderFullName = senderUser?.fullname ?? "Someone";
+
+            var existingNotification = await _context.notification
+                .FirstOrDefaultAsync(n => n.recipient_user_id == recipientUserId &&
+                                          n.type == notificationType &&
+                                          n.related_entity_id == postId);
+
+            if (existingNotification == null)
+            {
+                // Create new notification
+                var notification = new Models.Entities.Notification
+                {
+                    recipient_user_id = recipientUserId,
+                    sender_user_id = senderUserId,
+                    type = notificationType,
+                    related_entity_id = postId,
+                    message = notificationType == "Comment"
+                        ? $"{senderFullName} commented on your post."
+                        : $"{senderFullName} replied to your comment.",
+                    created_at = DateTime.UtcNow,
+                    is_read = false,
+                    last_push_sent_at = DateTime.UtcNow,
+                    aggregated_user_ids = senderUserId.ToString(),
+                    aggregated_comment_ids = commentId.ToString()
+                };
+
+                _context.notification.Add(notification);
+                await _context.SaveChangesAsync();
+
+                // Send push notification
+                if (!string.IsNullOrEmpty(recipientFcmToken))
+                {
+                    await SendNotificationAsync(new NotificationRequest
+                    {
+                        Token = recipientFcmToken,
+                        Title = $"New {notificationType}",
+                        Body = notification.message
+                    });
+                }
+            }
+            else
+            {
+                // Aggregation logic
+                var userIds = existingNotification.aggregated_user_ids?.Split(',').Select(int.Parse).ToList() ?? new List<int>();
+                var commentIds = existingNotification.aggregated_comment_ids?.Split(',').Select(int.Parse).ToList() ?? new List<int>();
+
+                if (userIds.Count >= maxAggregatedUsers)
+                {
+                    // Too many aggregated users, create a new notification instead
+                    var newNotification = new Models.Entities.Notification
+                    {
+                        recipient_user_id = recipientUserId,
+                        sender_user_id = senderUserId,
+                        type = notificationType,
+                        related_entity_id = postId,
+                        message = notificationType == "Comment"
+                            ? $"{senderFullName} commented on your post."
+                            : $"{senderFullName} replied to your comment.",
+                        created_at = DateTime.UtcNow,
+                        is_read = false,
+                        last_push_sent_at = DateTime.UtcNow,
+                        aggregated_user_ids = senderUserId.ToString(),
+                        aggregated_comment_ids = commentId.ToString()
+                    };
+
+                    _context.notification.Add(newNotification);
+                    await _context.SaveChangesAsync();
+
+                    if (!string.IsNullOrEmpty(recipientFcmToken))
+                    {
+                        await SendNotificationAsync(new NotificationRequest
+                        {
+                            Token = recipientFcmToken,
+                            Title = $"New {notificationType}",
+                            Body = newNotification.message
+                        });
+                    }
+                }
+                else
+                {
+                    // Update existing notification
+                    if (!userIds.Contains(senderUserId))
+                    {
+                        userIds.Insert(0, senderUserId);
+                    }
+                    else
+                    {
+                        userIds.Remove(senderUserId);
+                        userIds.Insert(0, senderUserId);
+                    }
+
+                    if (!commentIds.Contains(commentId))
+                    {
+                        commentIds.Insert(0, commentId);
+                    }
+                    else
+                    {
+                        commentIds.Remove(commentId);
+                        commentIds.Insert(0, commentId);
+                    }
+
+                    var usersDict = await _context.users
+                        .Where(u => userIds.Contains(u.user_id))
+                        .ToDictionaryAsync(u => u.user_id, u => u.fullname);
+
+                    var userNames = userIds
+                        .Where(id => usersDict.ContainsKey(id))
+                        .Select(id => usersDict[id])
+                        .ToList();
+
+                    int userCount = userNames.Count;
+                    int namesToDisplay = 2;
+
+                    string message;
+                    if (userCount <= namesToDisplay)
+                    {
+                        message = (notificationType == "Comment")
+                            ? $"{string.Join(" and ", userNames)} commented on your post."
+                            : $"{string.Join(" and ", userNames)} replied to your comment.";
+                    }
+                    else
+                    {
+                        int othersCount = userCount - namesToDisplay;
+                        var displayedNames = userNames.Take(namesToDisplay);
+                        message = (notificationType == "Comment")
+                            ? $"{string.Join(", ", displayedNames)}, and {othersCount} others commented on your post."
+                            : $"{string.Join(", ", displayedNames)}, and {othersCount} others replied to your comment.";
+                    }
+
+                    existingNotification.message = message;
+                    existingNotification.aggregated_user_ids = string.Join(",", userIds);
+                    existingNotification.aggregated_comment_ids = string.Join(",", commentIds);
+
+                    _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
+                    _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
+                    _context.Entry(existingNotification).Property(n => n.aggregated_comment_ids).IsModified = true;
+
+                    if (existingNotification.last_push_sent_at == null ||
+                        DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown)
+                    {
+                        // Send push notification
+                        if (!string.IsNullOrEmpty(recipientFcmToken))
+                        {
+                            await SendNotificationAsync(new NotificationRequest
+                            {
+                                Token = recipientFcmToken,
+                                Title = userCount > 1 ? $"New {notificationType}s" : $"New {notificationType}",
+                                Body = message
+                            });
+
+                            existingNotification.last_push_sent_at = DateTime.UtcNow;
+                            _context.Entry(existingNotification).Property(n => n.last_push_sent_at).IsModified = true;
+                        }
+                    }
+
+                    await _context.SaveChangesAsync();
+                }
+            }
+        }
+
+
 
     }
 }
