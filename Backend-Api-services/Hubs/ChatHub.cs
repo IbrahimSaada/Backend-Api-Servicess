@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using Backend_Api_services.Models.DTOs.messageDto;
 using Backend_Api_services.Models.DTOs.chatDto;
 using Backend_Api_services.Services;
+using Backend_Api_services.Services.Interfaces;
 
 namespace Backend_Api_services.Hubs
 {
@@ -22,11 +23,13 @@ namespace Backend_Api_services.Hubs
 
         private readonly apiDbContext _context;
         private readonly SignatureService _signatureService;
+        private readonly IChatNotificationService _chatNotificationService;
 
-        public ChatHub(apiDbContext context, SignatureService signatureService)
+        public ChatHub(apiDbContext context, SignatureService signatureService, IChatNotificationService chatNotificationService)
         {
             _context = context;
             _signatureService = signatureService;
+            _chatNotificationService = chatNotificationService;
         }
 
         // Method called when a user connects
@@ -260,6 +263,8 @@ namespace Backend_Api_services.Hubs
             {
                 await Clients.Clients(senderConnections).SendAsync("MessageSent", messageDto);
             }
+            // **Send Push Notification to the Recipient**
+            await _chatNotificationService.NotifyUserOfNewMessageAsync(recipientUserId, senderId, messageContent);
         }
 
         // Method to handle typing indicators
