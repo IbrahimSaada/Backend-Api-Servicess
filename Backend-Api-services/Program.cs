@@ -134,6 +134,7 @@ builder.Services.AddScoped<IFileService, FileService>();
 builder.Services.AddScoped<RatingService>();
 // Register Notification Service
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IChatNotificationService, ChatNotificationService>();
 
 var app = builder.Build();
 
