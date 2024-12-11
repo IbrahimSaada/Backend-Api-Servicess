@@ -31,6 +31,26 @@ namespace Backend_Api_services.Services
                 return;
             }
 
+            // Check if the sender is muted by the recipient (for chat-specific notifications)
+            bool isChatMuted = await _context.muted_users
+                .AnyAsync(m => m.muted_by_user_id == recipientUserId && m.muted_user_id == senderUserId);
+
+            if (isChatMuted)
+            {
+                _logger.LogInformation($"Chat notifications are muted for user {recipientUserId} from user {senderUserId}. Skipping notification.");
+                return;
+            }
+
+            // Retrieve the recipient user
+            var recipientUser = await _context.users.FirstOrDefaultAsync(u => u.user_id == recipientUserId);
+
+            // Check if the recipient has globally muted notifications
+            if (recipientUser?.is_notifications_muted == true)
+            {
+                _logger.LogInformation($"Notifications are globally muted for user {recipientUserId}. Skipping notification.");
+                return;
+            }
+
             // Retrieve the sender's information for the notification message
             var sender = await _context.users.FindAsync(senderUserId);
             string senderName = sender?.fullname ?? "Someone";

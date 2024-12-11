@@ -636,7 +636,8 @@ namespace Backend_Api_services.Controllers
             int userId,
             bool? isPublic = null,
             bool? isFollowersPublic = null,
-            bool? isFollowingPublic = null)
+            bool? isFollowingPublic = null,
+            bool? isNotificationsMuted = null) // New parameter for global notification setting
         {
             // Extract the signature from the request headers
             var signature = Request.Headers["X-Signature"].FirstOrDefault();
@@ -646,7 +647,7 @@ namespace Backend_Api_services.Controllers
             }
 
             // Prepare the data to sign based on the userId and privacy settings
-            var dataToSign = $"{userId}:{isPublic?.ToString() ?? "null"}:{isFollowersPublic?.ToString() ?? "null"}:{isFollowingPublic?.ToString() ?? "null"}";
+            var dataToSign = $"{userId}:{isPublic?.ToString() ?? "null"}:{isFollowersPublic?.ToString() ?? "null"}:{isFollowingPublic?.ToString() ?? "null"}:{isNotificationsMuted?.ToString() ?? "null"}";
 
             // Validate the signature
             if (!_signatureService.ValidateSignature(signature, dataToSign))
@@ -675,6 +676,12 @@ namespace Backend_Api_services.Controllers
             if (isFollowingPublic.HasValue)
             {
                 userProfile.isFollowingPublic = isFollowingPublic.Value;
+            }
+
+            // Update the global notifications setting
+            if (isNotificationsMuted.HasValue)
+            {
+                userProfile.is_notifications_muted = isNotificationsMuted.Value;
             }
 
             // Save changes to the database
@@ -711,12 +718,13 @@ namespace Backend_Api_services.Controllers
                 return NotFound("User profile not found.");
             }
 
-            // Return the privacy status for the profile
+            // Return the privacy status for the profile including notifications setting
             return Ok(new
             {
                 isPublic = userProfile.is_public,
                 isFollowersPublic = userProfile.isFollowersPublic,  // Include followers privacy
-                isFollowingPublic = userProfile.isFollowingPublic   // Include following privacy
+                isFollowingPublic = userProfile.isFollowingPublic,  // Include following privacy
+                isNotificationsMuted = userProfile.is_notifications_muted // Include global notification setting
             });
         }
 

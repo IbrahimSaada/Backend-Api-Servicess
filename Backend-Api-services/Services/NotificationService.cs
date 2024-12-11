@@ -123,9 +123,11 @@ namespace Backend_Api_services.Services
         }
         public async Task HandleAggregatedNotificationAsync(int recipientUserId, int senderUserId, string type, int? relatedEntityId, string action)
         {
-            // Get recipient FCM token
+            // Get recipient FCM token and user settings
             var recipientUser = await _context.users.FindAsync(recipientUserId);
-            string recipientFcmToken = recipientUser?.fcm_token;
+
+            // Check if the recipient has globally muted notifications
+            bool isMuted = recipientUser?.is_notifications_muted == true;
 
             // Check if there is an existing notification for this type and entity
             var existingNotification = await _context.notification
@@ -157,14 +159,14 @@ namespace Backend_Api_services.Services
                 _context.notification.Add(notification);
                 await _context.SaveChangesAsync();
 
-                // Send push notification
-                if (!string.IsNullOrEmpty(recipientFcmToken))
+                // Send push notification only if notifications are not muted
+                if (!isMuted && !string.IsNullOrEmpty(recipientUser?.fcm_token))
                 {
                     try
                     {
                         await SendNotificationAsync(new NotificationRequest
                         {
-                            Token = recipientFcmToken,
+                            Token = recipientUser.fcm_token,
                             Title = $"New {type}",
                             Body = message
                         });
@@ -229,19 +231,18 @@ namespace Backend_Api_services.Services
                 _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
                 _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
 
-                // Decide whether to send a push notification
+                // Send push notification only if notifications are not muted
                 TimeSpan pushCooldown = TimeSpan.FromMinutes(5);
-                if (existingNotification.last_push_sent_at == null ||
+                if (!isMuted && existingNotification.last_push_sent_at == null ||
                     DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown)
                 {
-                    // Send push notification
-                    if (!string.IsNullOrEmpty(recipientFcmToken))
+                    if (!string.IsNullOrEmpty(recipientUser?.fcm_token))
                     {
                         try
                         {
                             await SendNotificationAsync(new NotificationRequest
                             {
-                                Token = recipientFcmToken,
+                                Token = recipientUser.fcm_token,
                                 Title = $"New {type}",
                                 Body = message
                             });
@@ -313,9 +314,11 @@ namespace Backend_Api_services.Services
         }
         public async Task HandleShareNotificationAsync(int recipientUserId, int senderUserId, int postId, string action)
         {
-            // Get recipient FCM token
+            // Get recipient user and check notification settings
             var recipientUser = await _context.users.FindAsync(recipientUserId);
-            string recipientFcmToken = recipientUser?.fcm_token;
+
+            // Check if notifications are globally muted
+            bool isMuted = recipientUser?.is_notifications_muted == true;
 
             // Check if there is an existing notification for this type and post
             var existingNotification = await _context.notification
@@ -347,14 +350,14 @@ namespace Backend_Api_services.Services
                 _context.notification.Add(notification);
                 await _context.SaveChangesAsync();
 
-                // Send push notification
-                if (!string.IsNullOrEmpty(recipientFcmToken))
+                // Send push notification only if notifications are not muted
+                if (!isMuted && !string.IsNullOrEmpty(recipientUser?.fcm_token))
                 {
                     try
                     {
                         await SendNotificationAsync(new NotificationRequest
                         {
-                            Token = recipientFcmToken,
+                            Token = recipientUser.fcm_token,
                             Title = "New Share",
                             Body = message
                         });
@@ -419,19 +422,19 @@ namespace Backend_Api_services.Services
                 _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
                 _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
 
-                // Decide whether to send a push notification
+                // Send push notification only if notifications are not muted
                 TimeSpan pushCooldown = TimeSpan.FromMinutes(5); // Adjust cooldown period as needed
-                if (existingNotification.last_push_sent_at == null ||
-                    DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown)
+                if (!isMuted &&
+                    (existingNotification.last_push_sent_at == null ||
+                    DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown))
                 {
-                    // Send push notification
-                    if (!string.IsNullOrEmpty(recipientFcmToken))
+                    if (!string.IsNullOrEmpty(recipientUser?.fcm_token))
                     {
                         try
                         {
                             await SendNotificationAsync(new NotificationRequest
                             {
-                                Token = recipientFcmToken,
+                                Token = recipientUser.fcm_token,
                                 Title = "New Share",
                                 Body = message
                             });
@@ -452,8 +455,12 @@ namespace Backend_Api_services.Services
         }
         public async Task HandleFollowNotificationAsync(int recipientUserId, int senderUserId, bool isMutualFollow)
         {
-            // Get recipient FCM token
+            // Get recipient user and FCM token
             var recipientUser = await _context.users.FindAsync(recipientUserId);
+
+            // Check if notifications are globally muted
+            bool isMuted = recipientUser?.is_notifications_muted == true;
+
             string recipientFcmToken = recipientUser?.fcm_token;
 
             // Get sender's full name
@@ -487,8 +494,8 @@ namespace Backend_Api_services.Services
                 _context.notification.Add(notification);
                 await _context.SaveChangesAsync();
 
-                // Send push notification
-                if (!string.IsNullOrEmpty(recipientFcmToken))
+                // Send push notification only if notifications are not muted
+                if (!isMuted && !string.IsNullOrEmpty(recipientFcmToken))
                 {
                     try
                     {
@@ -559,12 +566,12 @@ namespace Backend_Api_services.Services
                 _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
                 _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
 
-                // Decide whether to send a push notification based on cooldown
+                // Send push notification only if notifications are not muted
                 TimeSpan pushCooldown = TimeSpan.FromMinutes(5); // Adjust cooldown period as needed
-                if (existingNotification.last_push_sent_at == null ||
-                    DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown)
+                if (!isMuted &&
+                    (existingNotification.last_push_sent_at == null ||
+                    DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown))
                 {
-                    // Send push notification
                     if (!string.IsNullOrEmpty(recipientFcmToken))
                     {
                         try
@@ -590,10 +597,15 @@ namespace Backend_Api_services.Services
                 await _context.SaveChangesAsync();
             }
         }
+
         public async Task HandleAcceptFollowRequestNotificationAsync(int recipientUserId, int senderUserId)
         {
-            // Get recipient FCM token
+            // Get recipient user and check notification settings
             var recipientUser = await _context.users.FindAsync(recipientUserId);
+
+            // Check if notifications are globally muted
+            bool isMuted = recipientUser?.is_notifications_muted == true;
+
             string recipientFcmToken = recipientUser?.fcm_token;
 
             // Get sender's full name
@@ -626,8 +638,8 @@ namespace Backend_Api_services.Services
                 _context.notification.Add(notification);
                 await _context.SaveChangesAsync();
 
-                // Send push notification
-                if (!string.IsNullOrEmpty(recipientFcmToken))
+                // Send push notification only if notifications are not muted
+                if (!isMuted && !string.IsNullOrEmpty(recipientFcmToken))
                 {
                     try
                     {
@@ -698,12 +710,12 @@ namespace Backend_Api_services.Services
                 _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
                 _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
 
-                // Decide whether to send a push notification based on cooldown
+                // Send push notification only if notifications are not muted
                 TimeSpan pushCooldown = TimeSpan.FromMinutes(5); // Adjust cooldown period as needed
-                if (existingNotification.last_push_sent_at == null ||
-                    DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown)
+                if (!isMuted &&
+                    (existingNotification.last_push_sent_at == null ||
+                    DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown))
                 {
-                    // Send push notification
                     if (!string.IsNullOrEmpty(recipientFcmToken))
                     {
                         try
@@ -732,8 +744,12 @@ namespace Backend_Api_services.Services
 
         public async Task ***REMOVED***(int recipientUserId, int senderUserId, int ***REMOVED***)
         {
-            // Get recipient FCM token
+            // Get recipient user and check notification settings
             var recipientUser = await _context.users.FindAsync(recipientUserId);
+
+            // Check if notifications are globally muted
+            bool isMuted = recipientUser?.is_notifications_muted == true;
+
             string recipientFcmToken = recipientUser?.fcm_token;
 
             // Get sender's full name
@@ -765,8 +781,8 @@ namespace Backend_Api_services.Services
                 _context.notification.Add(notification);
                 await _context.SaveChangesAsync();
 
-                // Send push notification
-                if (!string.IsNullOrEmpty(recipientFcmToken))
+                // Send push notification only if notifications are not muted
+                if (!isMuted && !string.IsNullOrEmpty(recipientFcmToken))
                 {
                     try
                     {
@@ -839,12 +855,12 @@ namespace Backend_Api_services.Services
                 _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
                 _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
 
-                // Decide whether to send a push notification based on cooldown
+                // Send push notification only if notifications are not muted
                 TimeSpan pushCooldown = TimeSpan.FromMinutes(5); // Adjust cooldown period as needed
-                if (existingNotification.last_push_sent_at == null ||
-                    DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown)
+                if (!isMuted &&
+                    (existingNotification.last_push_sent_at == null ||
+                     DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown))
                 {
-                    // Send push notification
                     if (!string.IsNullOrEmpty(recipientFcmToken))
                     {
                         try
@@ -876,8 +892,11 @@ namespace Backend_Api_services.Services
             int maxAggregatedUsers = 10;
             TimeSpan pushCooldown = TimeSpan.FromMinutes(5);
 
-            // Get recipient FCM token
+            // Get recipient user and check notification settings
             var recipientUser = await _context.users.FindAsync(recipientUserId);
+
+            // Check if notifications are globally muted
+            bool isMuted = recipientUser?.is_notifications_muted == true;
             string recipientFcmToken = recipientUser?.fcm_token;
 
             // Get sender's full name
@@ -910,8 +929,8 @@ namespace Backend_Api_services.Services
                 _context.notification.Add(notification);
                 await _context.SaveChangesAsync();
 
-                // Send push notification
-                if (!string.IsNullOrEmpty(recipientFcmToken))
+                // Send push notification only if notifications are not muted
+                if (!isMuted && !string.IsNullOrEmpty(recipientFcmToken))
                 {
                     try
                     {
@@ -957,14 +976,14 @@ namespace Backend_Api_services.Services
                     _context.notification.Add(newNotification);
                     await _context.SaveChangesAsync();
 
-                    // Send push notification for the new aggregated notification
-                    if (!string.IsNullOrEmpty(recipientFcmToken))
+                    // Send push notification only if notifications are not muted
+                    if (!isMuted && !string.IsNullOrEmpty(recipientFcmToken))
                     {
                         try
                         {
                             await SendNotificationAsync(new NotificationRequest
                             {
-                                Token = recipientUser.fcm_token,
+                                Token = recipientFcmToken,
                                 Title = "New ***REMOVED***",
                                 Body = newNotification.message
                             });
@@ -1035,18 +1054,18 @@ namespace Backend_Api_services.Services
                     _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
                     _context.Entry(existingNotification).Property(n => n.aggregated_***REMOVED***_ids).IsModified = true;
 
-                    // Check the cooldown for push notifications
-                    if (existingNotification.last_push_sent_at == null ||
-                        DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown)
+                    // Send push notification only if notifications are not muted
+                    if (!isMuted &&
+                        (existingNotification.last_push_sent_at == null ||
+                         DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown))
                     {
-                        // Send push notification
                         if (!string.IsNullOrEmpty(recipientFcmToken))
                         {
                             try
                             {
                                 await SendNotificationAsync(new NotificationRequest
                                 {
-                                    Token = recipientUser.fcm_token,
+                                    Token = recipientFcmToken,
                                     Title = userCount > 1 ? "New ***REMOVED***s" : "New ***REMOVED***",
                                     Body = message
                                 });
@@ -1072,7 +1091,11 @@ namespace Backend_Api_services.Services
             int maxAggregatedUsers = 10;
 
             var recipientUser = await _context.users.FindAsync(recipientUserId);
+
+            // Check if notifications are globally muted
+            bool isMuted = recipientUser?.is_notifications_muted == true;
             string recipientFcmToken = recipientUser?.fcm_token;
+
             var senderUser = await _context.users.FindAsync(senderUserId);
             string senderFullName = senderUser?.fullname ?? "Someone";
 
@@ -1103,15 +1126,22 @@ namespace Backend_Api_services.Services
                 _context.notification.Add(notification);
                 await _context.SaveChangesAsync();
 
-                // Send push notification
-                if (!string.IsNullOrEmpty(recipientFcmToken))
+                // Send push notification only if notifications are not muted
+                if (!isMuted && !string.IsNullOrEmpty(recipientFcmToken))
                 {
-                    await SendNotificationAsync(new NotificationRequest
+                    try
                     {
-                        Token = recipientFcmToken,
-                        Title = $"New {notificationType}",
-                        Body = notification.message
-                    });
+                        await SendNotificationAsync(new NotificationRequest
+                        {
+                            Token = recipientFcmToken,
+                            Title = $"New {notificationType}",
+                            Body = notification.message
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, $"Failed to send push notification to user {recipientUserId}");
+                    }
                 }
             }
             else
@@ -1142,14 +1172,22 @@ namespace Backend_Api_services.Services
                     _context.notification.Add(newNotification);
                     await _context.SaveChangesAsync();
 
-                    if (!string.IsNullOrEmpty(recipientFcmToken))
+                    // Send push notification only if notifications are not muted
+                    if (!isMuted && !string.IsNullOrEmpty(recipientFcmToken))
                     {
-                        await SendNotificationAsync(new NotificationRequest
+                        try
                         {
-                            Token = recipientFcmToken,
-                            Title = $"New {notificationType}",
-                            Body = newNotification.message
-                        });
+                            await SendNotificationAsync(new NotificationRequest
+                            {
+                                Token = recipientFcmToken,
+                                Title = $"New {notificationType}",
+                                Body = newNotification.message
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, $"Failed to send push notification to user {recipientUserId}");
+                        }
                     }
                 }
                 else
@@ -1211,21 +1249,29 @@ namespace Backend_Api_services.Services
                     _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
                     _context.Entry(existingNotification).Property(n => n.aggregated_comment_ids).IsModified = true;
 
-                    if (existingNotification.last_push_sent_at == null ||
-                        DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown)
+                    // Send push notification only if notifications are not muted
+                    if (!isMuted &&
+                        (existingNotification.last_push_sent_at == null ||
+                         DateTime.UtcNow - existingNotification.last_push_sent_at >= pushCooldown))
                     {
-                        // Send push notification
                         if (!string.IsNullOrEmpty(recipientFcmToken))
                         {
-                            await SendNotificationAsync(new NotificationRequest
+                            try
                             {
-                                Token = recipientFcmToken,
-                                Title = userCount > 1 ? $"New {notificationType}s" : $"New {notificationType}",
-                                Body = message
-                            });
+                                await SendNotificationAsync(new NotificationRequest
+                                {
+                                    Token = recipientFcmToken,
+                                    Title = userCount > 1 ? $"New {notificationType}s" : $"New {notificationType}",
+                                    Body = message
+                                });
 
-                            existingNotification.last_push_sent_at = DateTime.UtcNow;
-                            _context.Entry(existingNotification).Property(n => n.last_push_sent_at).IsModified = true;
+                                existingNotification.last_push_sent_at = DateTime.UtcNow;
+                                _context.Entry(existingNotification).Property(n => n.last_push_sent_at).IsModified = true;
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, $"Failed to send push notification to user {recipientUserId}");
+                            }
                         }
                     }
 
@@ -1233,6 +1279,7 @@ namespace Backend_Api_services.Services
                 }
             }
         }
+
 
 
 

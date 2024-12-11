@@ -57,6 +57,7 @@ namespace Backend_Api_services.Models.Data
 ***REMOVED***
 ***REMOVED***
         public DbSet<Notification> notification { get; set; }
+        public DbSet<muted_users> muted_users { get; set; }
 
     }
 }

@@ -48,4 +48,6 @@ public class Users
     public bool isFollowingPublic { get; set; } = true;  // Default to public
 
     public string? fcm_token { get; set; }
+
+    public bool is_notifications_muted { get; set; }
 }
