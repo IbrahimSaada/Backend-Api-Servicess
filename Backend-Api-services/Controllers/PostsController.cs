@@ -601,4 +601,33 @@ public class PostsController : ControllerBase
         return commentResponse;
     }
 
+    // GET: api/Posts/{postId}/Likes
+    [HttpGet("{postId}/Likes")]
+    public async Task<IActionResult> GetPostLikes(int postId)
+    {
+        // Validate if the post exists
+        var post = await _context.Posts.FindAsync(postId);
+        if (post == null)
+        {
+            return NotFound("Post not found.");
+        }
+
+        // Fetch all users who liked the post
+        var likes = await _context.Likes
+            .Where(like => like.post_id == postId)
+            .Include(like => like.User)
+            .ToListAsync();
+
+        // Map the likes to a response object
+        var response = likes.Select(like => new
+        {
+            user_id = like.User.user_id,
+            fullname = like.User.fullname,
+            profile_pic = like.User.profile_pic,
+            liked_at = like.created_at // If you store the timestamp for when the like occurred
+        }).ToList();
+
+        return Ok(response);
+    }
+
 }

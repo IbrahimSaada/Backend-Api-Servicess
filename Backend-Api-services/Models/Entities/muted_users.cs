@@ -7,7 +7,7 @@ namespace Backend_Api_services.Models.Entities
     public class muted_users
     {
         [Key]
-        public int muted_id { get; set; }
+        public int mute_id { get; set; }
         public int muted_by_user_id { get; set; }
         public int muted_user_id { get; set; }
         public DateTime created_at { get; set; } = DateTime.UtcNow;
