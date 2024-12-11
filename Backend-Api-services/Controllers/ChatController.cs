@@ -1,4 +1,5 @@
 ﻿using Backend_Api_services.Models.Data;
+using Backend_Api_services.Models.DTOs;
 using Backend_Api_services.Models.DTOs.chatDto;
 using Backend_Api_services.Models.Entities;
 using Backend_Api_services.Services;
@@ -203,5 +204,89 @@ namespace Backend_Api_services.Controllers
             await _context.SaveChangesAsync();
             return Ok("Chat deleted successfully.");
         }
+
+        [HttpPost("mute-user")]
+        public async Task<IActionResult> MuteUser([FromBody] MuteUserDto dto)
+        {
+            // Validate the DTO
+            if (dto == null || dto.MutedByUserId <= 0 || dto.MutedUserId <= 0)
+            {
+                return BadRequest(new { message = "Invalid request data." });
+            }
+
+            // Retrieve the signature from the request headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+
+            // Generate the data to sign
+            var dataToSign = $"MutedByUserId:{dto.MutedByUserId}|MutedUserId:{dto.MutedUserId}";
+
+            // Validate the signature
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized(new { message = "Invalid or missing signature." });
+            }
+
+
+            // Check if the user is already muted
+            var existingMute = await _context.muted_users
+                .FirstOrDefaultAsync(m => m.muted_by_user_id == dto.MutedByUserId && m.muted_user_id == dto.MutedUserId);
+
+            if (existingMute != null)
+            {
+                return BadRequest(new { message = "User is already muted." });
+            }
+
+            // Create a new muted user entry
+            var muteUser = new muted_users
+            {
+                muted_by_user_id = dto.MutedByUserId,
+                muted_user_id = dto.MutedUserId,
+                created_at = DateTime.UtcNow
+            };
+
+            _context.muted_users.Add(muteUser);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "User muted successfully." });
+        }
+
+        [HttpPost("unmute-user")]
+        public async Task<IActionResult> UnmuteUser([FromBody] MuteUserDto dto)
+        {
+            // Validate the DTO
+            if (dto == null || dto.MutedByUserId <= 0 || dto.MutedUserId <= 0)
+            {
+                return BadRequest(new { message = "Invalid request data." });
+            }
+
+            // Retrieve the signature from the request headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+
+            // Generate the data to sign
+            var dataToSign = $"MutedByUserId:{dto.MutedByUserId}|MutedUserId:{dto.MutedUserId}";
+
+            // Validate the signature
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized(new { message = "Invalid or missing signature." });
+            }
+
+
+            // Check if the user is muted
+            var existingMute = await _context.muted_users
+                .FirstOrDefaultAsync(m => m.muted_by_user_id == dto.MutedByUserId && m.muted_user_id == dto.MutedUserId);
+
+            if (existingMute == null)
+            {
+                return NotFound(new { message = "User is not muted." });
+            }
+
+            // Remove the mute record
+            _context.muted_users.Remove(existingMute);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "User unmuted successfully." });
+        }
+
     }
 }
