@@ -58,6 +58,6 @@ namespace Backend_Api_services.Models.Data
         public DbSet<question_likes> question_likes { get; set; }
         public DbSet<Notification> notification { get; set; }
         public DbSet<muted_users> muted_users { get; set; }
-
+        public DbSet<BlockedUsers> blocked_users { get; set; }
     }
 }

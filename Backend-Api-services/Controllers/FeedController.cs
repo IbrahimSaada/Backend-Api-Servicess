@@ -21,11 +21,13 @@ namespace Backend_Api_services.Controllers
     {
         private readonly apiDbContext _context;
         private readonly SignatureService _signatureService;
+        private readonly IBlockService _blockService;
 
-        public FeedController(apiDbContext context, SignatureService signatureService)
+        public FeedController(apiDbContext context, SignatureService signatureService, IBlockService blockService)
         {
             _context = context;
             _signatureService = signatureService;
+            _blockService = blockService;
         }
 
         [HttpGet]
@@ -91,37 +93,51 @@ namespace Backend_Api_services.Controllers
             // Since we removed 'post' from the FeedItemResponse for posts, we need to manually map PostInfo
             var posts = await postsQuery.ToListAsync();
 
-            // Add PostInfo to each post
+            // Filter out blocked users' posts
+            var filteredPosts = new List<FeedItemResponse>();
             foreach (var feedItem in posts)
             {
-                feedItem.Post = new PostInfo
+
+                // Check if the user or the post owner is blocked
+                var (isBlocked, reason) = await _blockService.IsBlockedAsync(userId, feedItem.User.UserId);
+                if (!isBlocked)
                 {
-                    PostId = feedItem.ItemId,
-                    CreatedAt = feedItem.CreatedAt,
-                    Content = feedItem.Content,
-                    Media = _context.PostMedias.AsNoTracking()
-                        .Where(m => m.post_id == feedItem.ItemId)
-                        .Select(media => new PostMediaResponse
-                        {
-                            media_id = media.media_id,
-                            media_url = media.media_url,
-                            media_type = media.media_type,
-                            post_id = media.post_id,
-                            thumbnail_url = media.thumbnail_url
-                        }).ToList(),
-                    LikeCount = _context.Posts.AsNoTracking()
-                        .Where(p => p.post_id == feedItem.ItemId)
-                        .Select(p => p.like_count)
-                        .FirstOrDefault(),
-                    CommentCount = _context.Posts.AsNoTracking()
-                        .Where(p => p.post_id == feedItem.ItemId)
-                        .Select(p => p.comment_count)
-                        .FirstOrDefault()
-                    // No need to include Author here since it's the same as User
-                };
+                    // Populate PostInfo
+                    feedItem.Post = new PostInfo
+                    {
+                        PostId = feedItem.ItemId,
+                        CreatedAt = feedItem.CreatedAt,
+                        Content = feedItem.Content,
+                        Media = await _context.PostMedias.AsNoTracking()
+                            .Where(m => m.post_id == feedItem.ItemId)
+                            .Select(media => new PostMediaResponse
+                            {
+                                media_id = media.media_id,
+                                media_url = media.media_url,
+                                media_type = media.media_type,
+                                post_id = media.post_id,
+                                thumbnail_url = media.thumbnail_url
+                            }).ToListAsync(),
+                        LikeCount = await _context.Posts.AsNoTracking()
+                            .Where(p => p.post_id == feedItem.ItemId)
+                            .Select(p => p.like_count)
+                            .FirstOrDefaultAsync(),
+                        CommentCount = await _context.Posts.AsNoTracking()
+                            .Where(p => p.post_id == feedItem.ItemId)
+                            .Select(p => p.comment_count)
+                            .FirstOrDefaultAsync()
+                    };
+
+                    filteredPosts.Add(feedItem);
+                }
+                else
+                {
+                    // Optionally log or handle the reason for blocking
+                    Console.WriteLine($"Post skipped due to blocking: {reason}");
+                }
             }
 
-            return posts;
+            return filteredPosts;
         }
 
 
@@ -148,7 +164,7 @@ namespace Backend_Api_services.Controllers
                     Type = "repost",
                     ItemId = sharedPost.ShareId,
                     CreatedAt = sharedPost.SharedAt,
-                    Content = sharedPost.Comment, // Sharer's comment
+                    Content = sharedPost.Comment,
                     User = new UserInfo
                     {
                         UserId = sharedPost.Sharedby.user_id,
@@ -184,13 +200,31 @@ namespace Backend_Api_services.Controllers
                     IsBookmarked = userBookmarkedPostIds.Contains(sharedPost.PostId)
                 });
 
-            return await sharedPostsQuery.ToListAsync();
+            var sharedPosts = await sharedPostsQuery.ToListAsync();
+
+            var filteredSharedPosts = new List<FeedItemResponse>();
+            foreach (var sp in sharedPosts)
+            {
+                // Check if viewer is blocked by either the sharer or the original post author
+                var (isBlockedBySharer, sharerBlockReason) = await _blockService.IsBlockedAsync(userId, sp.User.UserId);
+                var (isBlockedByAuthor, authorBlockReason) = sp.Post.Author != null
+                    ? await _blockService.IsBlockedAsync(userId, sp.Post.Author.UserId)
+                    : (false, string.Empty);
+
+                // Add to filtered list if not blocked by either the sharer or the author
+                if (!isBlockedBySharer && !isBlockedByAuthor)
+                {
+                    filteredSharedPosts.Add(sp);
+                }
+            }
+
+            return filteredSharedPosts;
         }
 
 
 
 
-        private IQueryable<int> GetApprovedFollowings(int userId)
+            private IQueryable<int> GetApprovedFollowings(int userId)
         {
             return _context.Followers.AsNoTracking()
                 .Where(f =>
@@ -250,18 +284,22 @@ namespace Backend_Api_services.Controllers
                         LikeCount = p.like_count,
                         CommentCount = p.comment_count
                     },
-                    IsLiked = GetUserLikedPostIds(userId).Contains(p.post_id),
-                    IsBookmarked = GetUserBookmarkedPostIds(userId).Contains(p.post_id)
+                    IsLiked = _context.Likes.Any(like => like.post_id == p.post_id && like.user_id == userId),
+                    IsBookmarked = _context.Bookmarks.Any(bookmark => bookmark.post_id == p.post_id && bookmark.user_id == userId)
                 })
                 .FirstOrDefaultAsync();
 
-            if (post != null)
+            if (post == null)
+                return NotFound(new { message = "Post not found." });
+
+            // Check block
+            var (isBlocked, reason) = await _blockService.IsBlockedAsync(userId, post.User.UserId);
+            if (isBlocked)
             {
-                return Ok(post);
+                return StatusCode(403, $"You cannot view this post because of blocking: {reason}");
             }
 
-            // If no post is found, return 404
-            return NotFound(new { message = "Post not found." });
+            return Ok(post);
         }
 
         [HttpGet("Posts/{postId}/SharedPosts/{userId}")]
@@ -273,13 +311,7 @@ namespace Backend_Api_services.Controllers
         {
             // Validate pagination parameters
             if (pageNumber <= 0) pageNumber = 1;
-            if (pageSize <= 0 || pageSize > 100) pageSize = 10; // Set reasonable limits
-
-            // Validate userId
-            if (userId <= 0)
-            {
-                return Unauthorized(new { message = "Invalid user ID." });
-            }
+            if (pageSize <= 0 || pageSize > 100) pageSize = 10;
 
             // Check if the post exists
             var post = await _context.Posts.AsNoTracking()
@@ -290,7 +322,13 @@ namespace Backend_Api_services.Controllers
                 return NotFound(new { message = "Post not found." });
             }
 
-            // Verify that the userId is the owner of the post
+            // Check block
+            var (isBlocked, reason) = await _blockService.IsBlockedAsync(userId, post.user_id);
+            if (isBlocked)
+            {
+                return StatusCode(403, $"You cannot view shared posts because of blocking: {reason}");
+            }
+
             if (post.user_id != userId)
             {
                 // Return 401 explicitly without using Forbid()
@@ -299,11 +337,11 @@ namespace Backend_Api_services.Controllers
 
             // Query shared posts for the specified postId
             var sharedPostsQuery = _context.SharedPosts.AsNoTracking()
-                .Include(sp => sp.Sharedby) // The user who shared the post
+                .Include(sp => sp.Sharedby)
                 .Include(sp => sp.PostContent)
                     .ThenInclude(p => p.Media)
-                .Include(sp => sp.PostContent.User) // The original post owner
-                .Where(sp => sp.PostId == postId && sp.PostContent.user_id == userId) // Ensure the user is the owner of the original post
+                .Include(sp => sp.PostContent.User)
+                .Where(sp => sp.PostId == postId && sp.PostContent.user_id == userId)
                 .OrderByDescending(sp => sp.SharedAt);
 
             // Apply pagination
@@ -312,49 +350,62 @@ namespace Backend_Api_services.Controllers
                 .Take(pageSize)
                 .ToListAsync();
 
-            // Build the list of FeedItemResponse
-            var feedItems = sharedPosts
-                .Where(sharedPost => sharedPost.PostContent != null && sharedPost.Sharedby != null) // Filter out invalid entries
-                .Select(sharedPost => new FeedItemResponse
+            var feedItems = new List<FeedItemResponse>();
+            foreach (var sharedPost in sharedPosts)
+            {
+                // Check if blocked by the sharer
+                var (isBlockedSharer, sharerBlockReason) = await _blockService.IsBlockedAsync(userId, sharedPost.SharerId);
+
+                // Check if blocked by the original author (if exists)
+                var (isBlockedAuthor, authorBlockReason) = sharedPost.PostContent?.User != null
+                    ? await _blockService.IsBlockedAsync(userId, sharedPost.PostContent.User.user_id)
+                    : (false, string.Empty);
+
+                // Skip if blocked by either the sharer or the author
+                if (!isBlockedSharer && !isBlockedAuthor)
                 {
-                    Type = "repost",
-                    ItemId = sharedPost.ShareId,
-                    CreatedAt = sharedPost.SharedAt,
-                    Content = sharedPost.Comment, // Sharer's comment
-                    User = new UserInfo
+                    feedItems.Add(new FeedItemResponse
                     {
-                        UserId = sharedPost.Sharedby?.user_id ?? 0,
-                        FullName = sharedPost.Sharedby?.fullname,
-                        Username = sharedPost.Sharedby?.username,
-                        ProfilePictureUrl = sharedPost.Sharedby?.profile_pic
-                    },
-                    Post = new PostInfo
-                    {
-                        PostId = sharedPost.PostContent?.post_id ?? 0,
-                        CreatedAt = sharedPost.PostContent?.created_at ?? DateTime.MinValue,
-                        Content = sharedPost.PostContent?.caption,
-                        Media = sharedPost.PostContent?.Media?.Select(media => new PostMediaResponse
+                        Type = "repost",
+                        ItemId = sharedPost.ShareId,
+                        CreatedAt = sharedPost.SharedAt,
+                        Content = sharedPost.Comment,
+                        User = new UserInfo
                         {
-                            media_id = media.media_id,
-                            media_url = media.media_url,
-                            media_type = media.media_type,
-                            post_id = media.post_id,
-                            thumbnail_url = media.thumbnail_url
-                        }).ToList() ?? new List<PostMediaResponse>(),
-                        LikeCount = sharedPost.PostContent?.like_count ?? 0,
-                        CommentCount = sharedPost.PostContent?.comment_count ?? 0,
-                        Author = new UserInfo
+                            UserId = sharedPost.Sharedby?.user_id ?? 0,
+                            FullName = sharedPost.Sharedby?.fullname,
+                            Username = sharedPost.Sharedby?.username,
+                            ProfilePictureUrl = sharedPost.Sharedby?.profile_pic
+                        },
+                        Post = new PostInfo
                         {
-                            UserId = sharedPost.PostContent?.User?.user_id ?? 0,
-                            FullName = sharedPost.PostContent?.User?.fullname,
-                            Username = sharedPost.PostContent?.User?.username,
-                            ProfilePictureUrl = sharedPost.PostContent?.User?.profile_pic
-                        }
-                    },
-                    IsLiked = false, // Add your logic for "liked" state if necessary
-                    IsBookmarked = false // Add your logic for "bookmarked" state if necessary
-                })
-                .ToList();
+                            PostId = sharedPost.PostContent?.post_id ?? 0,
+                            CreatedAt = sharedPost.PostContent?.created_at ?? DateTime.MinValue,
+                            Content = sharedPost.PostContent?.caption,
+                            Media = sharedPost.PostContent?.Media?.Select(media => new PostMediaResponse
+                            {
+                                media_id = media.media_id,
+                                media_url = media.media_url,
+                                media_type = media.media_type,
+                                post_id = media.post_id,
+                                thumbnail_url = media.thumbnail_url
+                            }).ToList() ?? new List<PostMediaResponse>(),
+                            LikeCount = sharedPost.PostContent?.like_count ?? 0,
+                            CommentCount = sharedPost.PostContent?.comment_count ?? 0,
+                            Author = new UserInfo
+                            {
+                                UserId = sharedPost.PostContent?.User?.user_id ?? 0,
+                                FullName = sharedPost.PostContent?.User?.fullname,
+                                Username = sharedPost.PostContent?.User?.username,
+                                ProfilePictureUrl = sharedPost.PostContent?.User?.profile_pic
+                            }
+                        },
+                        IsLiked = false,
+                        IsBookmarked = false
+                    });
+                }
+
+            }
 
             // Return the list of FeedItemResponse
             return Ok(feedItems);

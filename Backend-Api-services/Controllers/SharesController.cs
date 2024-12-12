@@ -20,20 +20,20 @@ namespace Backend_Api_services.Controllers
         private readonly apiDbContext _context;
         private readonly SignatureService _signatureService;
         private readonly INotificationService _notificationService;
+        private readonly IBlockService _blockService;
 
-        public SharesController(apiDbContext context, SignatureService signatureService, INotificationService notificationService)
+        public SharesController(apiDbContext context, SignatureService signatureService, INotificationService notificationService, IBlockService blockService)
         {
             _context = context;
             _signatureService = signatureService;
             _notificationService = notificationService;
+            _blockService = blockService;
         }
 
         // POST: api/Shares
         [HttpPost]
-        [AllowAnonymous]
         public async Task<IActionResult> SharePost([FromBody] SharePostDto sharePostDto)
         {
-            /*
             // Validate the signature using relevant fields
             string signature = Request.Headers["X-Signature"];
             var dataToSign = $"{sharePostDto.UserId}:{sharePostDto.PostId}:{sharePostDto.Comment}";
@@ -42,7 +42,6 @@ namespace Backend_Api_services.Controllers
             {
                 return Unauthorized("Invalid or missing signature.");
             }
-            */
 
             if (!ModelState.IsValid)
             {
@@ -60,6 +59,13 @@ namespace Backend_Api_services.Controllers
             if (post == null)
             {
                 return NotFound("Post not found.");
+            }
+            var (isBlocked, reason) = await _blockService.IsBlockedAsync(sharePostDto.UserId, post.user_id);
+
+            if (isBlocked)
+            {
+                // Return the 403 status with the blocking reason
+                return StatusCode(403, reason);
             }
 
             // Create the SharedPost entity
