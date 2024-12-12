@@ -17,11 +17,13 @@ namespace Backend_Api_services.Controllers
     {
         private readonly apiDbContext _context;
         private readonly SignatureService _signatureService; // Inject SignatureService
+        private readonly IBlockService _blockService;
 
-        public StoriesController(apiDbContext context, SignatureService signatureService)
+        public StoriesController(apiDbContext context, SignatureService signatureService, IBlockService blockService)
         {
             _context = context;
             _signatureService = signatureService; // Assign SignatureService
+            _blockService = blockService;
         }
 
         // POST: api/Stories
@@ -159,36 +161,48 @@ namespace Backend_Api_services.Controllers
                                               .Where(s => s.isactive && s.expiresat > DateTime.UtcNow)
                                               .ToListAsync();
 
-            // Fetch all the view data for this user in one query
-            var viewedStoryIds = await _context.StoryViews
+            // For each story, check block
+            var responseList = new List<StoriesResponse>();
+            foreach (var story in activeStories)
+            {
+                // Check if the user is blocked by the story owner or vice versa
+                var (isBlocked, blockReason) = await _blockService.IsBlockedAsync(userId, story.user_id);
+                if (!isBlocked)
+                {
+                    var validMedia = story.Media
+                        .Where(m => m.expiresat > DateTime.UtcNow)
+                        .Select(m => new StoriesMediaResponse
+                        {
+                            media_id = m.media_id,
+                            media_url = m.media_url,
+                            media_type = m.media_type,
+                            expiresat = m.expiresat,
+                            createdatforeachstory = m.createdat
+                        }).ToList();
+
+                    if (validMedia.Any())
+                    {
+                        var viewedStoryIds = await _context.StoryViews
                                                .Where(v => v.viewer_id == userId)
                                                .Select(v => v.story_id)
                                                .ToListAsync();
 
-            // Create the response list with the isviewed status, fullname, and profile_pic
-            var responseList = activeStories.Select(story => new StoriesResponse
-            {
-                story_id = story.story_id,
-                user_id = story.user_id,
-                createdat = story.createdat,
-                expiresat = story.expiresat,
-                isactive = story.isactive,
-                viewscount = story.viewscount,
-                isviewed = viewedStoryIds.Contains(story.story_id),
-                fullname = story.users.fullname,  // Get the user's full name
-                profile_pic = story.users.profile_pic,  // Get the user's profile picture
-                Media = story.Media
-                             .Where(m => m.expiresat > DateTime.UtcNow) // Only include unexpired media
-                             .Select(m => new StoriesMediaResponse
-                             {
-                                 media_id = m.media_id,
-                                 media_url = m.media_url,
-                                 media_type = m.media_type,
-                                 expiresat = m.expiresat,// Include expiresat for frontend reference
-                                 createdatforeachstory = m.createdat
-                             }).ToList()
-            }).Where(r => r.Media.Any()) // Only return stories that have at least one unexpired media item
-            .ToList();
+                        responseList.Add(new StoriesResponse
+                        {
+                            story_id = story.story_id,
+                            user_id = story.user_id,
+                            createdat = story.createdat,
+                            expiresat = story.expiresat,
+                            isactive = story.isactive,
+                            viewscount = story.viewscount,
+                            isviewed = viewedStoryIds.Contains(story.story_id),
+                            fullname = story.users.fullname,
+                            profile_pic = story.users.profile_pic,
+                            Media = validMedia
+                        });
+                    }
+                }
+            }
 
             return Ok(responseList);
         }

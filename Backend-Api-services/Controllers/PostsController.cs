@@ -18,12 +18,14 @@ public class PostsController : ControllerBase
     private readonly apiDbContext _context;
     private readonly SignatureService _signatureService;
     private readonly INotificationService _notificationService;
+    private readonly IBlockService _blockService;
 
-    public PostsController(apiDbContext context, SignatureService signatureService, INotificationService notificationService)
+    public PostsController(apiDbContext context, SignatureService signatureService, INotificationService notificationService, IBlockService blockService)
     {
         _context = context;
         _signatureService = signatureService;
         _notificationService = notificationService;
+        _blockService = blockService;
     }
 
     // GET: api/Posts
@@ -84,6 +86,13 @@ public class PostsController : ControllerBase
             return NotFound("Post not found.");
         }
 
+        var (isBlocked, reason) = await _blockService.IsBlockedAsync(likeRequest.user_id, post.user_id);
+
+        if (isBlocked)
+        {
+            // Return the 403 status with the blocking reason
+            return StatusCode(403, reason);
+        }
         var existingLike = await _context.Likes
             .FirstOrDefaultAsync(l => l.post_id == postId && l.user_id == userId);
 
@@ -173,6 +182,14 @@ public class PostsController : ControllerBase
         if (post == null)
         {
             return NotFound("Post not found.");
+        }
+
+        var (isBlocked, reason) = await _blockService.IsBlockedAsync(commentRequest.userid, post.user_id);
+
+        if (isBlocked)
+        {
+            // Return the 403 status with the blocking reason
+            return StatusCode(403, reason);
         }
 
         var comment = new Comment
@@ -311,12 +328,20 @@ public class PostsController : ControllerBase
         {
             return Unauthorized("Invalid or missing signature.");
         }
-
         var post = await _context.Posts.FindAsync(postId);
         if (post == null)
         {
             return NotFound("Post not found.");
         }
+
+        var (isBlocked, reason) = await _blockService.IsBlockedAsync(commentRequest.userid, post.user_id);
+
+        if (isBlocked)
+        {
+            // Return the 403 status with the blocking reason
+            return StatusCode(403, reason);
+        }
+
 
         var comment = await _context.Comments.FindAsync(commentId);
         if (comment == null || comment.post_id != postId)
@@ -360,6 +385,15 @@ public class PostsController : ControllerBase
         {
             return NotFound("Comment not found.");
         }
+
+        var (isBlocked, reason) = await _blockService.IsBlockedAsync(userId, post.user_id);
+
+        if (isBlocked)
+        {
+            // Return the 403 status with the blocking reason
+            return StatusCode(403, reason);
+        }
+
 
         if (comment.user_id != userId)
         {
@@ -420,6 +454,14 @@ public class PostsController : ControllerBase
             return NotFound("Post not found.");
         }
 
+        var (isBlocked, reason) = await _blockService.IsBlockedAsync(BookmarkRequest.user_id, post.user_id);
+
+        if (isBlocked)
+        {
+            // Return the 403 status with the blocking reason
+            return StatusCode(403, reason);
+        }
+
         var existingBookmark = await _context.Bookmarks
             .FirstOrDefaultAsync(l => l.post_id == postId && l.user_id == userId);
 
@@ -442,7 +484,7 @@ public class PostsController : ControllerBase
         return Ok("Post bookmarked successfully.");
     }
     // POST: api/Posts/Unbookmark
-    [HttpPost("Unbookmark")] 
+    [HttpPost("Unbookmark")]
     public async Task<IActionResult> UnbookmarkPost([FromBody] BookmarkRequest bookmarkRequest)
     {
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
@@ -461,6 +503,14 @@ public class PostsController : ControllerBase
         if (post == null)
         {
             return NotFound("Post not found.");
+        }
+
+        var (isBlocked, reason) = await _blockService.IsBlockedAsync(bookmarkRequest.user_id, post.user_id);
+
+        if (isBlocked)
+        {
+            // Return the 403 status with the blocking reason
+            return StatusCode(403, reason);
         }
 
         var bookmark = await _context.Bookmarks

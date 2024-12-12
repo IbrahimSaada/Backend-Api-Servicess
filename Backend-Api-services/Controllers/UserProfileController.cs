@@ -9,6 +9,7 @@ using Backend_Api_services.Models.Entities;
 using Microsoft.Extensions.Hosting;
 using System.Text.RegularExpressions;
 using System.Text;
+using Org.BouncyCastle.Asn1.Ocsp;
 
 namespace Backend_Api_services.Controllers
 {
@@ -19,11 +20,14 @@ namespace Backend_Api_services.Controllers
     {
         private readonly apiDbContext _context;
         private readonly SignatureService _signatureService;
+        private readonly IBlockService _blockService;
 
-        public UserProfileController(apiDbContext context, SignatureService signatureService)
+
+        public UserProfileController(apiDbContext context, SignatureService signatureService, IBlockService blockService)
         {
             _context = context;
             _signatureService = signatureService;
+            _blockService = blockService;
         }
 
         // GET: api/UserProfile/{id}
@@ -928,6 +932,130 @@ namespace Backend_Api_services.Controllers
             await _context.SaveChangesAsync();
 
             return Ok("Shared post comment updated successfully.");
+        }
+
+        [HttpPost("block")]
+        [AllowAnonymous]
+        public async Task<IActionResult> BlockUser(int userId, [FromBody] BlockUserRequestDto request)
+        {
+            /*
+            // Validate signature
+            // Data to sign: userId + TargetUserId
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            var dataToSign = $"{userId}:{request.TargetUserId}";
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+            */
+
+            // Ensure the user and target exist
+            var user = await _context.users.FindAsync(userId);
+            var targetUser = await _context.users.FindAsync(request.TargetUserId);
+
+            if (user == null || targetUser == null)
+            {
+                return NotFound("User not found.");
+            }
+
+            // Check if already blocked
+            var alreadyBlocked = await _context.blocked_users
+                .AnyAsync(b => b.blocked_by_user_id == userId && b.blocked_user_id == request.TargetUserId);
+
+            if (alreadyBlocked)
+            {
+                return BadRequest("User is already blocked.");
+            }
+
+            // Create a new block record
+            var block = new BlockedUsers
+            {
+                blocked_by_user_id = userId,
+                blocked_user_id = request.TargetUserId,
+                created_at = DateTime.UtcNow
+            };
+
+            _context.blocked_users.Add(block);
+            await _context.SaveChangesAsync();
+            await _blockService.HandleBlockAsync(userId, request.TargetUserId);
+
+            return Ok("User blocked successfully.");
+        }
+
+        [HttpDelete("block")]
+        [AllowAnonymous]
+        public async Task<IActionResult> UnblockUser(int userId, [FromBody] BlockUserRequestDto request)
+        {
+            /*
+            // Validate signature
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            var dataToSign = $"{userId}:{request.TargetUserId}";
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+            */
+
+            var blockRecord = await _context.blocked_users
+                .FirstOrDefaultAsync(b => b.blocked_by_user_id == userId && b.blocked_user_id == request.TargetUserId);
+
+            if (blockRecord == null)
+            {
+                return NotFound("No block record found.");
+            }
+
+            _context.blocked_users.Remove(blockRecord);
+            await _context.SaveChangesAsync();
+            await _blockService.HandleBlockAsync(userId, request.TargetUserId);
+
+            return Ok("User unblocked successfully.");
+        }
+
+        [HttpGet("blocked")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetBlockedUsers(int userId, int pageNumber = 1, int pageSize = 10)
+        {
+            /*
+            // Validate signature
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            var dataToSign = $"{userId}:{pageNumber}:{pageSize}";
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+            */
+
+            if (pageNumber <= 0 || pageSize <= 0)
+            {
+                return BadRequest("Page number and page size must be greater than zero.");
+            }
+
+            var totalBlocked = await _context.blocked_users.CountAsync(b => b.blocked_by_user_id == userId);
+
+            var blockedUsers = await _context.blocked_users
+                .Where(b => b.blocked_by_user_id == userId)
+                .Include(b => b.BlockedUser)
+                .OrderByDescending(b => b.created_at)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .Select(b => new
+                {
+                    b.blocked_user_id,
+                    FullName = b.BlockedUser.fullname,
+                    ProfilePic = b.BlockedUser.profile_pic,
+                    BlockedAt = b.created_at
+                })
+                .ToListAsync();
+
+            var response = new
+            {
+                TotalBlocked = totalBlocked,
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                BlockedUsers = blockedUsers
+            };
+
+            return Ok(response);
         }
 
     }

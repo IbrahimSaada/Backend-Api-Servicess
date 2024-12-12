@@ -58,6 +58,6 @@ namespace Backend_Api_services.Models.Data
 ***REMOVED***
         public DbSet<Notification> notification { get; set; }
         public DbSet<muted_users> muted_users { get; set; }
-
+        public DbSet<BlockedUsers> blocked_users { get; set; }
     }
 }
