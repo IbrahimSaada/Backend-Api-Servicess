@@ -17,11 +17,13 @@ namespace Backend_Api_services.Controllers
     {
         private readonly apiDbContext _context;
         private readonly SignatureService _signatureService;
+        private readonly IBlockService _blockService;
 
-        public ChatController(apiDbContext context, SignatureService signatureService)
+        public ChatController(apiDbContext context, SignatureService signatureService, IBlockService blockService)
         {
             _context = context;
             _signatureService = signatureService;
+            _blockService = blockService;
         }
 
         // Fetch all chats for a user with last message and unread count
@@ -49,6 +51,11 @@ namespace Backend_Api_services.Controllers
                 .Include(c => c.InitiatorUser)
                 .Include(c => c.RecipientUser)
                 .Include(c => c.Messages)
+                .ToListAsync();
+
+            var mutedUsers = await _context.muted_users
+                .Where(m => m.muted_by_user_id == userId)
+                .Select(m => m.muted_user_id)
                 .ToListAsync();
 
             var chatDtos = new List<ChatDto>();
@@ -79,6 +86,9 @@ namespace Backend_Api_services.Controllers
                     .Where(m => m.sender_id != userId && m.read_at == null)
                     .Count();
 
+                var otherUserId = isInitiator ? c.user_recipient : c.user_initiator;
+                bool isMuted = mutedUsers.Contains(otherUserId);
+
                 var chatDto = new ChatDto
                 {
                     ChatId = c.chat_id,
@@ -93,7 +103,8 @@ namespace Backend_Api_services.Controllers
                     deleted_at_recipient = c.deleted_at_recipient ?? default(DateTime),
                     LastMessage = lastMessageText,
                     LastMessageTime = lastMessageTime,
-                    UnreadCount = unreadCount
+                    UnreadCount = unreadCount,
+                    IsMuted = isMuted
                 };
 
                 chatDtos.Add(chatDto);
@@ -174,11 +185,13 @@ namespace Backend_Api_services.Controllers
             var signature = Request.Headers["X-Signature"].FirstOrDefault();
             var dataToSign = $"{dto.UserId}:{dto.ChatId}";
 
+            // Validate the signature
             if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
             {
                 return Unauthorized("Invalid or missing signature.");
             }
 
+            // Fetch the chat
             var chat = await _context.Chats.FindAsync(dto.ChatId);
 
             if (chat == null)
@@ -186,6 +199,17 @@ namespace Backend_Api_services.Controllers
                 return NotFound("Chat not found.");
             }
 
+            // Identify the other user in the chat
+            int otherUserId = chat.user_initiator == dto.UserId ? chat.user_recipient : chat.user_initiator;
+
+            // Check if the user is blocked by or has blocked the other user
+            var (isBlocked, blockReason) = await _blockService.IsBlockedAsync(dto.UserId, otherUserId);
+            if (isBlocked)
+            {
+                return StatusCode(403, $"Action not allowed: {blockReason}");
+            }
+
+            // Perform soft delete based on the user's role in the chat
             if (chat.user_initiator == dto.UserId)
             {
                 chat.is_deleted_by_initiator = true;
@@ -226,6 +250,12 @@ namespace Backend_Api_services.Controllers
                 return Unauthorized(new { message = "Invalid or missing signature." });
             }
 
+            // Check if the user is blocked
+            var (isBlocked, blockReason) = await _blockService.IsBlockedAsync(dto.MutedByUserId, dto.MutedUserId);
+            if (isBlocked)
+            {
+                return StatusCode(403, new { message = $"Action not allowed: {blockReason}" });
+            }
 
             // Check if the user is already muted
             var existingMute = await _context.muted_users
@@ -269,6 +299,13 @@ namespace Backend_Api_services.Controllers
             if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
             {
                 return Unauthorized(new { message = "Invalid or missing signature." });
+            }
+
+            // Check if the user is blocked
+            var (isBlocked, blockReason) = await _blockService.IsBlockedAsync(dto.MutedByUserId, dto.MutedUserId);
+            if (isBlocked)
+            {
+                return StatusCode(403, new { message = $"Action not allowed: {blockReason}" });
             }
 
 
