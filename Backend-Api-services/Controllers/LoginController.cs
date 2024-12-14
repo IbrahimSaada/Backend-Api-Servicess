@@ -172,6 +172,7 @@ public class LoginController : ControllerBase
         var claims = new[]
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.user_id.ToString()),
+            new Claim("userId", user.user_id.ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 

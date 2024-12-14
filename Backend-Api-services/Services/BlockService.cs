@@ -22,15 +22,30 @@ public class BlockService : IBlockService
         // Determine the reason
         if (viewerIsBlocked)
         {
-            return (true, "You are blocked by the post owner.");
+            return (true, "You are blocked by this user.");
         }
         else if (profileUserIsBlocked)
         {
-            return (true, "You have blocked the post owner.");
+            return (true, "You have blocked this user.");
         }
 
         // Neither is blocked
         return (false, string.Empty);
+    }
+
+    public async Task<(bool viewerIsBlocked, bool profileUserIsBlocked, string reason)> GetBlockStatusAsync(int viewerUserId, int profileUserId)
+    {
+        bool viewerIsBlocked = await _context.blocked_users
+            .AnyAsync(b => b.blocked_by_user_id == profileUserId && b.blocked_user_id == viewerUserId);
+
+        bool profileUserIsBlocked = await _context.blocked_users
+            .AnyAsync(b => b.blocked_by_user_id == viewerUserId && b.blocked_user_id == profileUserId);
+
+        string reason = string.Empty;
+        if (viewerIsBlocked) reason = "You are blocked by this user.";
+        else if (profileUserIsBlocked) reason = "You have blocked this user.";
+
+        return (viewerIsBlocked, profileUserIsBlocked, reason);
     }
 
 
@@ -57,17 +72,33 @@ public class BlockService : IBlockService
         {
             // If you want to delete completely:
             _context.Chats.RemoveRange(chats);
+        }
 
-            // OR if you prefer to mark as deleted:
-            /*
-            foreach (var chat in chats)
-            {
-                chat.is_deleted_by_initiator = true;
-                chat.is_deleted_by_recipient = true;
-                chat.deleted_at_initiator = DateTime.UtcNow;
-                chat.deleted_at_recipient = DateTime.UtcNow;
-            }
-            */
+        // Remove pending private ***REMOVED***s between the two users
+        var pendingPrivateQuestions = await _context.private***REMOVED***s
+            .Where(pq => pq.status == "pending" &&
+                        ((pq.sender_id == userId && pq.receiver_id == targetUserId)
+                         || (pq.sender_id == targetUserId && pq.receiver_id == userId)))
+            .ToListAsync();
+
+        if (pendingPrivateQuestions.Any())
+        {
+            _context.private***REMOVED***s.RemoveRange(pendingPrivateQuestions);
+        }
+
+        // Remove bookmarks:
+        // 1. Bookmarks by userId on targetUserId's posts
+        // 2. Bookmarks by targetUserId on userId's posts
+        var bookmarksToRemove = await _context.Bookmarks
+            .Include(b => b.post)
+            .Where(b =>
+                (b.user_id == userId && b.post.user_id == targetUserId) ||
+                (b.user_id == targetUserId && b.post.user_id == userId))
+            .ToListAsync();
+
+        if (bookmarksToRemove.Any())
+        {
+            _context.Bookmarks.RemoveRange(bookmarksToRemove);
         }
 
         await _context.SaveChangesAsync();

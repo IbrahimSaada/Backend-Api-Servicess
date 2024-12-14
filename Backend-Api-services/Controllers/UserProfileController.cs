@@ -10,6 +10,10 @@ using Microsoft.Extensions.Hosting;
 using System.Text.RegularExpressions;
 using System.Text;
 using Org.BouncyCastle.Asn1.Ocsp;
+using System.Diagnostics;
+using Humanizer;
+using System.IdentityModel.Tokens.Jwt;
+
 
 namespace Backend_Api_services.Controllers
 {
@@ -21,19 +25,24 @@ namespace Backend_Api_services.Controllers
         private readonly apiDbContext _context;
         private readonly SignatureService _signatureService;
         private readonly IBlockService _blockService;
+        private readonly ILogger<UserProfileController> _logger;
 
 
-        public UserProfileController(apiDbContext context, SignatureService signatureService, IBlockService blockService)
+        public UserProfileController(apiDbContext context, SignatureService signatureService, IBlockService blockService, ILogger<UserProfileController> logger)
         {
             _context = context;
             _signatureService = signatureService;
             _blockService = blockService;
+            _logger = logger;
         }
 
         // GET: api/UserProfile/{id}
         [HttpGet("{id}")]
-        public ActionResult GetUserProfileById(int id)
+        public async Task<ActionResult> GetUserProfileById(int id)
         {
+            // Extract userIdClaim from the JWT token directly as a string
+            int viewerUserId = int.Parse(User.Claims.First(c => c.Type == "userId").Value);
+
             // Extract the signature from the request header
             var signature = Request.Headers["X-Signature"].FirstOrDefault();
             var dataToSign = $"{id}"; // Data to sign is simply the user ID in this case
@@ -44,19 +53,33 @@ namespace Backend_Api_services.Controllers
                 return Unauthorized("Invalid or missing signature.");
             }
 
-            // Fetch user data from Users table
-            var user = _context.users.FirstOrDefault(u => u.user_id == id);
+            // Fetch user data from Users table asynchronously
+            var user = await _context.users.AsNoTracking().FirstOrDefaultAsync(u => u.user_id == id);
             if (user == null)
             {
                 return NotFound("User not found.");
             }
 
-            // Fetch number of followers and following count
-            var followersCount = _context.Followers.Count(f => f.followed_user_id == id);
-            var followingCount = _context.Followers.Count(f => f.follower_user_id == id);
+            // Check if blocked asynchronously
+            var (isBlocked, reason) = await _blockService.IsBlockedAsync(viewerUserId, id);
+            if (isBlocked)
+            {
+                // Return minimal info if blocked
+                var minimalProfile = new
+                {
+                    user_id = user.user_id,
+                    fullname = user.fullname,
+                    profile_pic = user.profile_pic
+                };
+                return Ok(minimalProfile);
+            }
 
-            // Fetch post count
-            var postCount = _context.Posts.Count(p => p.user_id == id);
+            // Fetch number of followers and following count asynchronously
+            var followersCount = await _context.Followers.CountAsync(f => f.followed_user_id == id);
+            var followingCount = await _context.Followers.CountAsync(f => f.follower_user_id == id);
+
+            // Fetch post count asynchronously
+            var postCount = await _context.Posts.CountAsync(p => p.user_id == id);
 
             // Create ProfileResponse DTO
             var profileResponse = new ProfileRepsone
@@ -75,6 +98,8 @@ namespace Backend_Api_services.Controllers
             // Return the response
             return Ok(profileResponse);
         }
+
+
         // POST: api/UserProfile/{id}/edit
         [HttpPost("{id}/edit")]
         public ActionResult UpdateUserProfile(int id, [FromBody] ProfileUpdateRequestDto profileUpdate)
@@ -176,6 +201,16 @@ namespace Backend_Api_services.Controllers
                 return NotFound("User profile not found.");
             }
 
+            var (viewerIsBlocked, profileUserIsBlocked, reason) = await _blockService.GetBlockStatusAsync(viewerUserId, userId);
+            if (viewerIsBlocked || profileUserIsBlocked)
+            {
+                return StatusCode(403, new
+                {
+                    message = reason,
+                    blockedBy = viewerIsBlocked,
+                    blockedUser = profileUserIsBlocked
+                });
+            }
             // Determine if the viewer is checking their own profile
             bool isOwner = (viewerUserId == userId);
 
@@ -401,6 +436,16 @@ namespace Backend_Api_services.Controllers
                 return NotFound("User profile not found.");
             }
 
+            var (isBlocked, reason) = await _blockService.IsBlockedAsync(viewerUserId, currentUserId);
+            if (isBlocked)
+            {
+                return StatusCode(403, new
+                {
+                    message = reason,
+                    blockedBy = viewerUserId == currentUserId,
+                    blockedUser = currentUserId == viewerUserId
+                });
+            }
             // If the profile is public, anyone can view the shared posts
             if (userProfile.is_public)
             {
@@ -934,20 +979,19 @@ namespace Backend_Api_services.Controllers
             return Ok("Shared post comment updated successfully.");
         }
 
-        [HttpPost("block")]
-        [AllowAnonymous]
+        [HttpPost("block/{userId}")]
         public async Task<IActionResult> BlockUser(int userId, [FromBody] BlockUserRequestDto request)
         {
-            /*
-            // Validate signature
-            // Data to sign: userId + TargetUserId
             var signature = Request.Headers["X-Signature"].FirstOrDefault();
             var dataToSign = $"{userId}:{request.TargetUserId}";
+            _logger.LogError($"Backend Received Data to Sign: {dataToSign}");
+            _logger.LogError($"Backend Received Signature: {signature}");
+
             if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
             {
                 return Unauthorized("Invalid or missing signature.");
             }
-            */
+            
 
             // Ensure the user and target exist
             var user = await _context.users.FindAsync(userId);
@@ -982,11 +1026,9 @@ namespace Backend_Api_services.Controllers
             return Ok("User blocked successfully.");
         }
 
-        [HttpDelete("block")]
-        [AllowAnonymous]
+        [HttpDelete("unblock")]
         public async Task<IActionResult> UnblockUser(int userId, [FromBody] BlockUserRequestDto request)
         {
-            /*
             // Validate signature
             var signature = Request.Headers["X-Signature"].FirstOrDefault();
             var dataToSign = $"{userId}:{request.TargetUserId}";
@@ -994,7 +1036,6 @@ namespace Backend_Api_services.Controllers
             {
                 return Unauthorized("Invalid or missing signature.");
             }
-            */
 
             var blockRecord = await _context.blocked_users
                 .FirstOrDefaultAsync(b => b.blocked_by_user_id == userId && b.blocked_user_id == request.TargetUserId);
@@ -1012,10 +1053,8 @@ namespace Backend_Api_services.Controllers
         }
 
         [HttpGet("blocked")]
-        [AllowAnonymous]
         public async Task<IActionResult> GetBlockedUsers(int userId, int pageNumber = 1, int pageSize = 10)
         {
-            /*
             // Validate signature
             var signature = Request.Headers["X-Signature"].FirstOrDefault();
             var dataToSign = $"{userId}:{pageNumber}:{pageSize}";
@@ -1023,7 +1062,6 @@ namespace Backend_Api_services.Controllers
             {
                 return Unauthorized("Invalid or missing signature.");
             }
-            */
 
             if (pageNumber <= 0 || pageSize <= 0)
             {

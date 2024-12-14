@@ -24,12 +24,14 @@ namespace Backend_Api_services.Hubs
         private readonly apiDbContext _context;
         private readonly SignatureService _signatureService;
         private readonly IChatNotificationService _chatNotificationService;
+        private readonly IBlockService _blockService;
 
-        public ChatHub(apiDbContext context, SignatureService signatureService, IChatNotificationService chatNotificationService)
+        public ChatHub(apiDbContext context, SignatureService signatureService, IChatNotificationService chatNotificationService, IBlockService blockService)
         {
             _context = context;
             _signatureService = signatureService;
             _chatNotificationService = chatNotificationService;
+            _blockService = blockService;
         }
 
         // Method called when a user connects
@@ -338,6 +340,14 @@ namespace Backend_Api_services.Hubs
             if (recipientUser == null)
             {
                 await Clients.Caller.SendAsync("Error", "Recipient user not found.");
+                return;
+            }
+
+            // Check if the user is blocked
+            var (isBlocked, blockReason) = await _blockService.IsBlockedAsync(initiatorUserId, recipientUserId);
+            if (isBlocked)
+            {
+                await Clients.Caller.SendAsync("Error", $"Action not allowed: {blockReason}");
                 return;
             }
 

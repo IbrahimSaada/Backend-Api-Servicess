@@ -17,12 +17,14 @@ using Microsoft.EntityFrameworkCore;
         private readonly apiDbContext _context;
         private readonly SignatureService _signatureService;
         private readonly INotificationService _notificationService;
+        private readonly IBlockService _blockService;
 
-    public UserConnectionsController(apiDbContext context, SignatureService signatureService, INotificationService notificationService)
+    public UserConnectionsController(apiDbContext context, SignatureService signatureService, INotificationService notificationService, IBlockService blockService)
         {
         _context = context;
         _signatureService = signatureService;
         _notificationService = notificationService;
+        _blockService = blockService;
     }
 
     // GET: api/Users/search?fullname=searchTerm&currentUserId=1&pageNumber=1&pageSize=10
@@ -109,6 +111,12 @@ using Microsoft.EntityFrameworkCore;
             return BadRequest("User or follower not found.");
         }
 
+        var (isBlocked, blockReason) = await _blockService.IsBlockedAsync(followUserDto.follower_user_id, followUserDto.followed_user_id);
+        if (isBlocked)
+        {
+            return StatusCode(403, $"You cannot follow this user: {blockReason}");
+        }
+
         // Check if the user is already following the other user
         var existingFollow = _context.Followers
             .FirstOrDefault(f => f.followed_user_id == followUserDto.followed_user_id && f.follower_user_id == followUserDto.follower_user_id);
@@ -163,7 +171,7 @@ using Microsoft.EntityFrameworkCore;
 
     // DELETE: api/Users/unfollow
     [HttpDelete("unfollow")]
-    public ActionResult UnfollowUser([FromBody] FollowUserDto followUserDto)
+    public async Task<ActionResult> UnfollowUser([FromBody] FollowUserDto followUserDto)
     {
         // Extract the signature from the request header
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
@@ -178,12 +186,19 @@ using Microsoft.EntityFrameworkCore;
         // Input validation to ensure IDs are valid
         if (followUserDto.follower_user_id <= 0 || followUserDto.followed_user_id <= 0)
         {
-           return BadRequest("Invalid user IDs provided.");
+            return BadRequest("Invalid user IDs provided.");
+        }
+
+        // Check if either user is blocked
+        var (isBlocked, blockReason) = await _blockService.IsBlockedAsync(followUserDto.follower_user_id, followUserDto.followed_user_id);
+        if (isBlocked)
+        {
+            return StatusCode(403, $"You cannot unfollow this user: {blockReason}");
         }
 
         // Check if the following relationship exists
-        var followRecord = _context.Followers
-            .FirstOrDefault(f => f.followed_user_id == followUserDto.followed_user_id && f.follower_user_id == followUserDto.follower_user_id);
+        var followRecord = await _context.Followers
+            .FirstOrDefaultAsync(f => f.followed_user_id == followUserDto.followed_user_id && f.follower_user_id == followUserDto.follower_user_id);
 
         if (followRecord == null)
         {
@@ -192,7 +207,7 @@ using Microsoft.EntityFrameworkCore;
 
         // Remove the follow record
         _context.Followers.Remove(followRecord);
-        _context.SaveChanges();
+        await _context.SaveChangesAsync();
 
         return Ok("Unfollowed successfully.");
     }
@@ -247,13 +262,13 @@ using Microsoft.EntityFrameworkCore;
 
     // POST: api/Users/cancel-follower-request
     [HttpPost("cancel-follower-request")]
-    public ActionResult CancelFollowerRequest(FollowUserDto followUserDto)
+    public async Task<ActionResult> CancelFollowerRequest(FollowUserDto followUserDto)
     {
         // Extract the signature from the request header
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
         var dataToSign = $"{followUserDto.follower_user_id}:{followUserDto.followed_user_id}";
 
-         // Validate the signature
+        // Validate the signature
         if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
         {
             return Unauthorized("Invalid or missing signature.");
@@ -265,9 +280,17 @@ using Microsoft.EntityFrameworkCore;
             return BadRequest("Invalid user IDs provided.");
         }
 
+        // Check if either user is blocked
+        var (isBlocked, blockReason) = await _blockService.IsBlockedAsync(followUserDto.follower_user_id, followUserDto.followed_user_id);
+        if (isBlocked)
+        {
+            return StatusCode(403, $"Action not allowed: {blockReason}");
+        }
+
         // Find the follow relationship in the Followers table where the current user is being followed
-        var followRecord = _context.Followers
-            .FirstOrDefault(f => f.followed_user_id == followUserDto.followed_user_id && f.follower_user_id == followUserDto.follower_user_id);
+        var followRecord = await _context.Followers
+            .FirstOrDefaultAsync(f => f.followed_user_id == followUserDto.followed_user_id &&
+                                      f.follower_user_id == followUserDto.follower_user_id);
 
         if (followRecord == null)
         {
@@ -276,7 +299,7 @@ using Microsoft.EntityFrameworkCore;
 
         // Mark the follow request as dismissed
         followRecord.is_dismissed = true;
-        _context.SaveChanges();
+        await _context.SaveChangesAsync();
 
         return Ok("Follower request dismissed.");
     }
@@ -301,9 +324,17 @@ using Microsoft.EntityFrameworkCore;
             return BadRequest("Invalid user IDs provided.");
         }
 
+        // Check if either user is blocked
+        var (isBlocked, blockReason) = await _blockService.IsBlockedAsync(updateFollowStatusDto.followed_user_id, updateFollowStatusDto.follower_user_id);
+        if (isBlocked)
+        {
+            return StatusCode(403, $"Action not allowed: {blockReason}");
+        }
+
         // Fetch the follow relationship
-        var followRecord = _context.Followers
-            .FirstOrDefault(f => f.followed_user_id == updateFollowStatusDto.followed_user_id && f.follower_user_id == updateFollowStatusDto.follower_user_id);
+        var followRecord = await _context.Followers
+            .FirstOrDefaultAsync(f => f.followed_user_id == updateFollowStatusDto.followed_user_id &&
+                                      f.follower_user_id == updateFollowStatusDto.follower_user_id);
 
         if (followRecord == null)
         {
@@ -327,8 +358,8 @@ using Microsoft.EntityFrameworkCore;
         // Update the approval status
         followRecord.approval_status = updateFollowStatusDto.approval_status.ToLower();
 
-        // Save the changes
-        _context.SaveChanges();
+        // Save the changes asynchronously
+        await _context.SaveChangesAsync();
 
         // **Notification Logic Delegated to the Service**
         if (followRecord.approval_status == "approved")
@@ -345,7 +376,8 @@ using Microsoft.EntityFrameworkCore;
                 }
                 catch (Exception ex)
                 {
-                    // Handle the exception as needed (log or ignore)
+                    // Log or handle the exception as needed
+                    Console.WriteLine($"Notification failed: {ex.Message}");
                 }
             }
         }
