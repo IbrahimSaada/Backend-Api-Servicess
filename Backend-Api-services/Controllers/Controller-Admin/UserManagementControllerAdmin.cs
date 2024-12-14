@@ -138,4 +138,49 @@ public class UserManagementControllerAdmin : ControllerBase
 
         return Ok("User deleted successfully.");
     }
+    [HttpGet("usercount")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetAllUsersWithCount([FromQuery] UserFilterDTO filter)
+    {
+        IQueryable<Users> query = _context.users;
+
+        // Apply filters if provided
+        if (filter.StartDate.HasValue && filter.EndDate.HasValue)
+        {
+            query = query.Where(u => u.verified_at >= filter.StartDate && u.verified_at <= filter.EndDate);
+        }
+
+        // Get total count
+        var totalCount = await query.CountAsync();
+
+        // Get all users without pagination
+        var users = await query
+            .Select(u => new UserManagementDTO
+            {
+                UserId = u.user_id,
+                Username = u.username,
+                Email = u.email,
+                ProfilePic = u.profile_pic,
+                Bio = u.bio,
+                Rating = u.rating,
+                PhoneNumber = u.phone_number,
+                VerifiedAt = u.verified_at,
+                Dob = u.dob,
+                Gender = u.gender,
+                Fullname = u.fullname
+            })
+            .ToListAsync();
+
+        // Return metadata and data
+        var result = new
+        {
+            Metadata = new
+            {
+                TotalCount = totalCount
+            },
+            Data = users
+        };
+
+        return Ok(result);
+    }
 }
