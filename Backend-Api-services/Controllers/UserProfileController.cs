@@ -1026,12 +1026,14 @@ namespace Backend_Api_services.Controllers
             return Ok("User blocked successfully.");
         }
 
-        [HttpDelete("unblock")]
+        [HttpPost("unblock/{userId}")]
         public async Task<IActionResult> UnblockUser(int userId, [FromBody] BlockUserRequestDto request)
         {
             // Validate signature
             var signature = Request.Headers["X-Signature"].FirstOrDefault();
             var dataToSign = $"{userId}:{request.TargetUserId}";
+            _logger.LogError($"Backend Received Data to Sign: {dataToSign}");
+            _logger.LogError($"Backend Received Signature: {signature}");
             if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
             {
                 return Unauthorized("Invalid or missing signature.");
