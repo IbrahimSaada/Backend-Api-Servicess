@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 [Route("api/[controller]")]
 [ApiController]
 [Authorize]  // Apply JWT authorization to all endpoints in this controller
+[CheckBan]
 public class PostsController : ControllerBase
 {
     private readonly apiDbContext _context;

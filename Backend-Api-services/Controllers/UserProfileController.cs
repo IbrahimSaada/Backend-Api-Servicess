@@ -20,26 +20,29 @@ namespace Backend_Api_services.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Authorize]
+    [CheckBan]
     public class UserProfileController : ControllerBase
     {
         private readonly apiDbContext _context;
         private readonly SignatureService _signatureService;
         private readonly IBlockService _blockService;
+        private readonly IBanService _banService;
         private readonly ILogger<UserProfileController> _logger;
 
 
-        public UserProfileController(apiDbContext context, SignatureService signatureService, IBlockService blockService, ILogger<UserProfileController> logger)
+        public UserProfileController(apiDbContext context, SignatureService signatureService, IBlockService blockService, IBanService banService, ILogger<UserProfileController> logger)
         {
             _context = context;
             _signatureService = signatureService;
             _blockService = blockService;
+            _banService = banService;
             _logger = logger;
         }
 
         // GET: api/UserProfile/{id}
         [HttpGet("{id}")]
         public async Task<ActionResult> GetUserProfileById(int id)
-        {
+        {   
             // Extract userIdClaim from the JWT token directly as a string
             int viewerUserId = int.Parse(User.Claims.First(c => c.Type == "userId").Value);
 
@@ -58,6 +61,20 @@ namespace Backend_Api_services.Controllers
             if (user == null)
             {
                 return NotFound("User not found.");
+            }
+
+            // Check ban status via BanService
+            var (isBanned, banReason, banExpiresAt) = await _banService.GetBanDetailsAsync(id);
+            if (isBanned)
+            {
+                var minimalProfile = new
+                {
+                    IsBanned = true,
+                    user_id = user.user_id,
+                    fullname = user.fullname,
+                    profile_pic = user.profile_pic
+                };
+                return Ok(minimalProfile);
             }
 
             // Check if blocked asynchronously
@@ -178,7 +195,7 @@ namespace Backend_Api_services.Controllers
             {
                 return Unauthorized("Signature is missing.");
             }
-
+            
             // Prepare the data to sign (userId, viewerUserId, pageNumber, pageSize)
             var dataToSign = $"{userId}:{viewerUserId}:{pageNumber}:{pageSize}";
 
@@ -199,6 +216,15 @@ namespace Backend_Api_services.Controllers
             if (userProfile == null)
             {
                 return NotFound("User profile not found.");
+            }
+
+            var (isBanned, banReason, banExpiresAt) = await _banService.GetBanDetailsAsync(userId);
+            if (isBanned)
+            {
+                return StatusCode(403, new
+                {
+                    message ="This user is banned."
+                });
             }
 
             var (viewerIsBlocked, profileUserIsBlocked, reason) = await _blockService.GetBlockStatusAsync(viewerUserId, userId);
@@ -412,7 +438,7 @@ namespace Backend_Api_services.Controllers
             if (string.IsNullOrEmpty(signature))
             {
                 return Unauthorized("Signature is missing.");
-            }
+            }           
 
             // Prepare the data to sign (currentUserId, viewerUserId, pageNumber, pageSize)
             var dataToSign = $"{currentUserId}:{viewerUserId}:{pageNumber}:{pageSize}";
@@ -434,6 +460,15 @@ namespace Backend_Api_services.Controllers
             if (userProfile == null)
             {
                 return NotFound("User profile not found.");
+            }
+
+            var (isBanned, banReason, banExpiresAt) = await _banService.GetBanDetailsAsync(currentUserId);
+            if (isBanned)
+            {
+                return StatusCode(403, new
+                {
+                    message = "This user is banned."
+                });
             }
 
             var (isBlocked, reason) = await _blockService.IsBlockedAsync(viewerUserId, currentUserId);
@@ -1057,6 +1092,7 @@ namespace Backend_Api_services.Controllers
         [HttpGet("blocked")]
         public async Task<IActionResult> GetBlockedUsers(int userId, int pageNumber = 1, int pageSize = 10)
         {
+            /*
             // Validate signature
             var signature = Request.Headers["X-Signature"].FirstOrDefault();
             var dataToSign = $"{userId}:{pageNumber}:{pageSize}";
@@ -1064,6 +1100,7 @@ namespace Backend_Api_services.Controllers
             {
                 return Unauthorized("Invalid or missing signature.");
             }
+            */
 
             if (pageNumber <= 0 || pageSize <= 0)
             {

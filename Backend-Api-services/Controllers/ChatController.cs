@@ -13,6 +13,7 @@ namespace Backend_Api_services.Controllers
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    [CheckBan]
     public class ChatController : ControllerBase
     {
         private readonly apiDbContext _context;

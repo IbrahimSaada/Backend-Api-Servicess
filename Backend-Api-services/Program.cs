@@ -136,6 +136,7 @@ builder.Services.AddScoped<RatingService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IChatNotificationService, ChatNotificationService>();
 builder.Services.AddScoped<IBlockService, BlockService>();
+builder.Services.AddScoped<IBanService, BanService>();
 
 var app = builder.Build();
 
@@ -162,6 +163,7 @@ app.UseRouting();
 app.UseCors("AllowAllOrigins");
 app.UseAuthentication();
 app.UseAuthorization();
+//app.UseMiddleware<BanCheckMiddleware>();
 app.MapControllers();
 
 // Map the SignalR hub
