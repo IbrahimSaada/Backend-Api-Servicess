@@ -12,6 +12,7 @@ namespace Backend_Api_services.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Authorize]  // JWT Authorization applied to the entire controller
+    [CheckBan]
     public class ReportsController : ControllerBase
     {
         private readonly apiDbContext _context;

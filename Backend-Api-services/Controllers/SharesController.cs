@@ -15,6 +15,7 @@ namespace Backend_Api_services.Controllers
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]  // Ensure JWT authorization is applied to all endpoints
+    [CheckBan]
     public class SharesController : ControllerBase
     {
         private readonly apiDbContext _context;

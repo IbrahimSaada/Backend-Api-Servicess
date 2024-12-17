@@ -14,6 +14,7 @@ namespace Backend_Api_services.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Authorize]  // Require JWT authentication for the controller
+    [CheckBan]
     public class MediaController : ControllerBase
     {
         private readonly IAwsS3Service _awsS3Service;

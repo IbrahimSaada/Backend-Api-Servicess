@@ -13,6 +13,7 @@ namespace Backend_Api_services.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Authorize]
+    [CheckBan]
     public class StoriesController : ControllerBase
     {
         private readonly apiDbContext _context;

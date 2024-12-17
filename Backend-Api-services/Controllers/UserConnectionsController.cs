@@ -12,7 +12,8 @@ using Microsoft.EntityFrameworkCore;
     [Route("api/[controller]")]
     [ApiController]
     [Authorize]
-    public class UserConnectionsController : ControllerBase
+    [CheckBan]
+public class UserConnectionsController : ControllerBase
     {
         private readonly apiDbContext _context;
         private readonly SignatureService _signatureService;

@@ -19,6 +19,7 @@ namespace Backend_Api_services.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Authorize]  // Require JWT authentication for the whole controller
+    [CheckBan]
     public class CreatePostController : ControllerBase
     {
         private readonly apiDbContext _context;

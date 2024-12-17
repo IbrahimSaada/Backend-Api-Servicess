@@ -85,6 +85,23 @@ public class LoginController : ControllerBase
             return Unauthorized("Invalid email or phone number and password combination.");
         }
 
+        // Check if user is banned
+        var activeBan = await _context.banned_users
+            .Where(b => b.user_id == user.user_id && b.is_active && (b.expires_at == null || b.expires_at > DateTime.UtcNow))
+            .Select(b => new { b.ban_reason, b.expires_at })
+            .FirstOrDefaultAsync();
+
+        if (activeBan != null)
+        {
+            // User is banned, return ban details to the frontend
+            return Ok(new
+            {
+                IsBanned = true,
+                BanReason = activeBan.ban_reason,
+                BanExpiresAt = activeBan.expires_at
+            });
+        }
+
         // Update only the FCM token if provided
         if (!string.IsNullOrEmpty(loginModel.FcmToken) && user.fcm_token != loginModel.FcmToken)
         {
@@ -114,6 +131,7 @@ public class LoginController : ControllerBase
         // Return the response
         return Ok(new
         {
+            IsBanned = false,
             Token = accessToken,
             RefreshToken = refreshToken,
             UserId = user.user_id,

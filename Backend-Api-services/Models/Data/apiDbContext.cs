@@ -59,5 +59,6 @@ namespace Backend_Api_services.Models.Data
         public DbSet<Notification> notification { get; set; }
         public DbSet<muted_users> muted_users { get; set; }
         public DbSet<BlockedUsers> blocked_users { get; set; }
+        public DbSet<banned_users> banned_users { get; set; }
     }
 }
