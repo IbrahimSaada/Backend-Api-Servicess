@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using Amazon.S3;
 using Microsoft.AspNetCore.Http;
 using Backend_Api_services.Services.Interfaces;
+using Backend_Api_services.Models.DTOs;
 
 [Route("api/[controller]")]
 [ApiController]
@@ -53,53 +54,48 @@ public class RegistrationController : ControllerBase
     }
 
     [HttpPost("register")]
-    public async Task<ActionResult<Users>> RegisterUser([FromBody] Users user)
+    public async Task<ActionResult<Users>> RegisterUser([FromBody] RegisterUserDto userDto)
     {
-        _logger.LogInformation("Starting registration process for user: {Email}", user.email);
+        _logger.LogInformation("Starting registration process for user: {Email}", userDto.email);
 
-        user.email = user.email.ToLower();
-
-        if (!IsValidEmail(user.email))
+        var email = userDto.email.ToLower();
+        if (!IsValidEmail(email))
         {
-            _logger.LogWarning("Invalid email format: {Email}", user.email);
+            _logger.LogWarning("Invalid email format: {Email}", email);
             return BadRequest("Invalid email format.");
         }
 
-        if (!IsValidPhoneNumber(user.phone_number))
-        {
-            _logger.LogWarning("Invalid phone number format: {PhoneNumber}", user.phone_number);
-            return BadRequest("Invalid phone number format.");
-        }
-
-        if (!IsValidPassword(user.password))
+        if (!IsValidPassword(userDto.password))
         {
             _logger.LogWarning("Password does not meet complexity requirements.");
             return BadRequest("Password must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, one number, and one special character.");
         }
 
-        if (string.IsNullOrEmpty(user.fullname))
+        if (string.IsNullOrEmpty(userDto.fullname))
         {
             _logger.LogWarning("Full name is required.");
             return BadRequest("Full name is required.");
         }
 
-        var existingEmailUser = await _context.users.FirstOrDefaultAsync(u => u.email == user.email);
+        var existingEmailUser = await _context.users.FirstOrDefaultAsync(u => u.email == email);
         if (existingEmailUser != null)
         {
-            _logger.LogWarning("A user with this email already exists: {Email}", user.email);
+            _logger.LogWarning("A user with this email already exists: {Email}", email);
             return Conflict("A user with this email already exists.");
         }
 
-        var existingPhoneUser = await _context.users.FirstOrDefaultAsync(u => u.phone_number == user.phone_number);
-        if (existingPhoneUser != null)
+        // Map DTO to Entity
+        var user = new Users
         {
-            _logger.LogWarning("A user with this phone number already exists: {PhoneNumber}", user.phone_number);
-            return Conflict("A user with this phone number already exists.");
-        }
+            email = email,
+            password = userDto.password,
+            fullname = userDto.fullname,
+            dob = DateTime.SpecifyKind(userDto.dob, DateTimeKind.Utc),
+            gender = userDto.gender
+        };
 
         user.verification_code = GenerateVerificationCode();
-        user.username = GenerateUniqueUsername(user.email);
-        user.dob = DateTime.SpecifyKind(user.dob, DateTimeKind.Utc);
+        user.username = GenerateUniqueUsername(email);
 
         _context.users.Add(user);
         await _context.SaveChangesAsync();
@@ -117,7 +113,6 @@ public class RegistrationController : ControllerBase
             _logger.LogWarning("Failed to generate QR code for user ID: {UserId}", user.user_id);
         }
 
-        string emailBody = $"Your verification code is {user.verification_code}";
         await _emailService.SendVerificationEmailAsync(user.email, user.verification_code);
 
         return CreatedAtAction(nameof(GetUser), new { id = user.user_id }, user);
@@ -153,13 +148,6 @@ public class RegistrationController : ControllerBase
         return Ok(exists);
     }
 
-    [HttpGet("phone-exists/{phoneNumber}")]
-    public async Task<IActionResult> PhoneExists(string phoneNumber)
-    {
-        var exists = await _context.users.AnyAsync(u => u.phone_number == phoneNumber);
-        return Ok(exists);
-    }
-
     public class VerifyUserModel
     {
         public string? Email { get; set; }
@@ -170,12 +158,6 @@ public class RegistrationController : ControllerBase
     {
         var emailPattern = @"^[^@\s]+@[^@\s]+\.[^@\s]+$";
         return Regex.IsMatch(email, emailPattern);
-    }
-
-    private bool IsValidPhoneNumber(string phoneNumber)
-    {
-        var phonePattern = @"^\+?[1-9]\d{0,2}\d{7,12}$";
-        return Regex.IsMatch(phoneNumber, phonePattern);
     }
 
     private bool IsValidPassword(string password)
