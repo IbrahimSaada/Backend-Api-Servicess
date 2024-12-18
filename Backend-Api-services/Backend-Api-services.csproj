@@ -29,6 +29,9 @@
     <PackageReference Include="RestSharp" Version="112.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.0.1" />
+	<Content Include="Templates\VerificationEmailTemplate.html">
+		<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	</Content>
   </ItemGroup>
 
 </Project>
