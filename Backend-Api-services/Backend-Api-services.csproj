@@ -32,6 +32,9 @@
 	<Content Include="Templates\VerificationEmailTemplate.html">
 		<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 	</Content>
+	  <Content Include="Templates\ResetPasswordTemplate.html">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
   </ItemGroup>
 
 </Project>

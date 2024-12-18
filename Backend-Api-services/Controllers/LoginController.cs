@@ -13,7 +13,6 @@ using Backend_Api_services.Models.Data;
 using Backend_Api_services.Models.DTOs;
 using Backend_Api_services.Models.Entities;
 using System.Security.Cryptography;
-using Microsoft.VisualStudio.Web.CodeGenerators.Mvc.Templates.BlazorIdentity.Pages.Manage;
 
 [Route("api/[controller]")]
 [ApiController]
@@ -58,7 +57,7 @@ public class LoginController : ControllerBase
         {
             return BadRequest("Email and password are required.");
         }
-        /*
+
         // Extract signature from headers
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
         if (string.IsNullOrEmpty(signature))
@@ -74,7 +73,7 @@ public class LoginController : ControllerBase
         {
             return Unauthorized("Invalid signature.");
         }
-        */
+
 
         // Retrieve the user from the database based on email only
         var email = loginModel.Email.ToLower();
@@ -154,7 +153,7 @@ public class LoginController : ControllerBase
 
 
     [HttpPut("UpdateFcmToken/{userId}")]
-    public async Task<IActionResult> UpdateFcmToken(int userId, [FromBody] UpdateFcmTokenModel model)
+     public async Task<IActionResult> UpdateFcmToken(int userId, [FromBody] UpdateFcmTokenModel model)
     {
         if (model == null || string.IsNullOrEmpty(model.FcmToken))
         {
