@@ -14,6 +14,7 @@ using Amazon.S3;
 using Microsoft.AspNetCore.Http;
 using Backend_Api_services.Services.Interfaces;
 using Backend_Api_services.Models.DTOs;
+using Microsoft.AspNetCore.Authorization;
 
 [Route("api/[controller]")]
 [ApiController]
@@ -84,11 +85,12 @@ public class RegistrationController : ControllerBase
             return Conflict("A user with this email already exists.");
         }
 
-        // Map DTO to Entity
+        // Map DTO to Entity and hash the password
         var user = new Users
         {
             email = email,
-            password = userDto.password,
+            // Hash the password using bcrypt
+            password = BCrypt.Net.BCrypt.HashPassword(userDto.password),
             fullname = userDto.fullname,
             dob = DateTime.SpecifyKind(userDto.dob, DateTimeKind.Utc),
             gender = userDto.gender

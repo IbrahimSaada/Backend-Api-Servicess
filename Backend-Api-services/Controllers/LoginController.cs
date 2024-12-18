@@ -13,6 +13,7 @@ using Backend_Api_services.Models.Data;
 using Backend_Api_services.Models.DTOs;
 using Backend_Api_services.Models.Entities;
 using System.Security.Cryptography;
+using Microsoft.VisualStudio.Web.CodeGenerators.Mvc.Templates.BlazorIdentity.Pages.Manage;
 
 [Route("api/[controller]")]
 [ApiController]
@@ -47,42 +48,50 @@ public class LoginController : ControllerBase
         return generatedSignature == receivedSignature;
     }
 
+
     // POST: api/Login
     [HttpPost]
     public async Task<IActionResult> Login([FromBody] LoginModel loginModel)
     {
         // Validate the input
-        if (loginModel == null || string.IsNullOrEmpty(loginModel.EmailOrPhoneNumber) || string.IsNullOrEmpty(loginModel.Password))
+        if (loginModel == null || string.IsNullOrEmpty(loginModel.Email) || string.IsNullOrEmpty(loginModel.Password))
         {
-            return BadRequest("Email or phone number and password are required.");
+            return BadRequest("Email and password are required.");
+        }
+        /*
+        // Extract signature from headers
+        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        if (string.IsNullOrEmpty(signature))
+        {
+            return Unauthorized("Signature missing.");
         }
 
-        // Extract signature from headers
-        // var signature = Request.Headers["X-Signature"].FirstOrDefault();
-        // if (string.IsNullOrEmpty(signature))
-        // {
-        //     return Unauthorized("Signature missing.");
-        // }
-
         // Create string representation for signing (could use JSON serialization)
-        // var requestData = $"{loginModel.EmailOrPhoneNumber}:{loginModel.Password}:{loginModel.FcmToken}";
+        var requestData = $"{loginModel.Email}:{loginModel.Password}:{loginModel.FcmToken}";
 
         // Validate the signature
-        // if (!ValidateSignature(signature, requestData))
-        // {
-        //     return Unauthorized("Invalid signature.");
-        // }
+        if (!ValidateSignature(signature, requestData))
+        {
+            return Unauthorized("Invalid signature.");
+        }
+        */
 
-        // Retrieve the user from the database
+        // Retrieve the user from the database based on email only
+        var email = loginModel.Email.ToLower();
         var user = await _context.users
-            .AsNoTracking() // Ensures no accidental tracking of the entity
-            .FirstOrDefaultAsync(u =>
-                (u.email == loginModel.EmailOrPhoneNumber || u.phone_number == loginModel.EmailOrPhoneNumber) &&
-                u.password == loginModel.Password); // Direct comparison (consider hashing for security)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.email == email);
 
         if (user == null)
         {
-            return Unauthorized("Invalid email or phone number and password combination.");
+            return Unauthorized("Invalid email and password combination.");
+        }
+
+        // Verify the password using bcrypt
+        bool isPasswordValid = BCrypt.Net.BCrypt.Verify(loginModel.Password, user.password);
+        if (!isPasswordValid)
+        {
+            return Unauthorized("Invalid email and password combination.");
         }
 
         // Check if user is banned
@@ -105,12 +114,14 @@ public class LoginController : ControllerBase
         // Update only the FCM token if provided
         if (!string.IsNullOrEmpty(loginModel.FcmToken) && user.fcm_token != loginModel.FcmToken)
         {
+            // Since 'user' is fetched with AsNoTracking, we need to attach it first
             user.fcm_token = loginModel.FcmToken;
+            _context.users.Attach(user);
             _context.Entry(user).Property(u => u.fcm_token).IsModified = true; // Only modify the FCM token
             await _context.SaveChangesAsync();
         }
 
-        _logger.LogInformation("User logged in successfully: {EmailOrPhoneNumber}", loginModel.EmailOrPhoneNumber);
+        _logger.LogInformation("User logged in successfully: {Email}", email);
 
         // Generate tokens
         var accessToken = GenerateJwtToken(user);

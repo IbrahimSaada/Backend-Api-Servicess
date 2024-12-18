@@ -2,7 +2,7 @@
 {
     public class LoginModel
     {
-        public string? EmailOrPhoneNumber { get; set; }
+        public string? Email { get; set; }
         public string? Password { get; set; }
         public string? FcmToken { get; set; } // New property
     }
