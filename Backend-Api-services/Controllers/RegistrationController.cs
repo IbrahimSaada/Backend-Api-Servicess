@@ -118,7 +118,7 @@ public class RegistrationController : ControllerBase
         }
 
         string emailBody = $"Your verification code is {user.verification_code}";
-        await _emailService.SendEmailAsync(user.email, "Verification Code", emailBody);
+        await _emailService.SendVerificationEmailAsync(user.email, user.verification_code);
 
         return CreatedAtAction(nameof(GetUser), new { id = user.user_id }, user);
     }
