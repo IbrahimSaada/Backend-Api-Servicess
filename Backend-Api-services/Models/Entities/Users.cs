@@ -27,10 +27,7 @@ public class Users
     public string qr_code { get; set; } = "";
 
     public double rating { get; set; } = 0;
-
-    [Required]
-    [Phone]
-    public string phone_number { get; set; } = "";
+    public string? phone_number { get; set; }
 
     public string? verification_code { get; set; } = "";
 
