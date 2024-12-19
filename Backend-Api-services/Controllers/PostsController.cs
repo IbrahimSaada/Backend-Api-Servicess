@@ -656,6 +656,16 @@ public class PostsController : ControllerBase
     [HttpGet("{postId}/Likes")]
     public async Task<IActionResult> GetPostLikes(int postId)
     {
+        // Extract the signature from headers
+        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        var dataToSign = $"{postId}";
+
+        // Validate the signature
+        if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+        {
+            return Unauthorized("Invalid or missing signature.");
+        }
+
         // Validate if the post exists
         var post = await _context.Posts.FindAsync(postId);
         if (post == null)
