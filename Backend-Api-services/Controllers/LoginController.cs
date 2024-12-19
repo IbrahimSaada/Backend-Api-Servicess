@@ -57,7 +57,7 @@ public class LoginController : ControllerBase
         {
             return BadRequest("Email and password are required.");
         }
-
+        /*
         // Extract signature from headers
         var signature = Request.Headers["X-Signature"].FirstOrDefault();
         if (string.IsNullOrEmpty(signature))
@@ -73,6 +73,7 @@ public class LoginController : ControllerBase
         {
             return Unauthorized("Invalid signature.");
         }
+        */
 
 
         // Retrieve the user from the database based on email only
@@ -91,6 +92,16 @@ public class LoginController : ControllerBase
         if (!isPasswordValid)
         {
             return Unauthorized("Invalid email and password combination.");
+        }
+
+        // Check if the account is verified
+        if (user.verified_at == null)
+        {
+            return StatusCode(403, new
+            {
+                IsVerified = false,
+                Message = "Account not verified. Please verify your account to proceed."
+            });
         }
 
         // Check if user is banned
