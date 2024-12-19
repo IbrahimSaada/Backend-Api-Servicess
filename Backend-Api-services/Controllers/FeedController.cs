@@ -17,6 +17,7 @@ namespace Backend_Api_services.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class FeedController : ControllerBase
     {
         private readonly apiDbContext _context;
@@ -33,6 +34,16 @@ namespace Backend_Api_services.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<FeedItemResponse>>> GetFeed(int userId, int pageNumber = 1, int pageSize = 20)
         {
+            // Extract the signature from headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            var dataToSign = $"{userId}:{pageNumber}:{pageSize}";
+
+            // Validate the signature
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             var feedItems = await GetFeedItems(userId);
 
             // Order by CreatedAt descending
@@ -250,6 +261,17 @@ namespace Backend_Api_services.Controllers
         [HttpGet("Post/{postId}")]
         public async Task<ActionResult<FeedItemResponse>> GetPostById(int postId, int userId)
         {
+
+            // Extract the signature from headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            var dataToSign = $"{postId}:{userId}";
+
+            // Validate the signature
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized("Invalid or missing signature.");
+            }
+
             // Check if the post exists
             var post = await _context.Posts.AsNoTracking()
                 .Include(p => p.User)
@@ -309,6 +331,17 @@ namespace Backend_Api_services.Controllers
             int pageNumber = 1,
             int pageSize = 10)
         {
+
+            // Extract the signature from headers
+            var signature = Request.Headers["X-Signature"].FirstOrDefault();
+            var dataToSign = $"{postId}:{userId}:{pageNumber}:{pageSize}";
+
+            // Validate the signature
+            if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
+            {
+                return Unauthorized(new { message = "Invalid or missing signature." });
+            }
+
             // Validate pagination parameters
             if (pageNumber <= 0) pageNumber = 1;
             if (pageSize <= 0 || pageSize > 100) pageSize = 10;
