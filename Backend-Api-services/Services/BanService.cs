@@ -1,4 +1,5 @@
 ﻿using Backend_Api_services.Models.Data;
+using Backend_Api_services.Models.DTOs_Admin;
 using Backend_Api_services.Models.Entites_Admin;
 using Microsoft.EntityFrameworkCore;
 
@@ -75,5 +76,25 @@ public class BanService : IBanService
         }
 
         return (true, activeBan.ban_reason, activeBan.expires_at);
+    }
+
+    public async Task<(List<BannedUserDto> BannedUsers, int TotalCount)> GetAllBannedUsersAsync(int page, int pageSize)
+    {
+        var query = _context.banned_users
+            .Where(b => b.is_active)
+            .Select(b => new BannedUserDto
+            {
+                UserId = b.user_id,
+                BanReason = b.ban_reason,
+                ExpiresAt = b.expires_at
+            });
+
+        var totalCount = await query.CountAsync();
+        var bannedUsers = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return (bannedUsers, totalCount);
     }
 }
