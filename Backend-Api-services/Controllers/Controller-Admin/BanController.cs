@@ -25,5 +25,25 @@ namespace Backend_Api_services.Controllers.Controller_Admin
             if (!success) return NotFound("No active bans found for the user.");
             return Ok("User unbanned successfully.");
         }
+
+        [HttpGet("GetAllBannedUsers")]
+        public async Task<IActionResult> GetAllBannedUsers([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        {
+            if (page <= 0 || pageSize <= 0) return BadRequest("Page and page size must be greater than zero.");
+
+            var (bannedUsers, totalCount) = await _banService.GetAllBannedUsersAsync(page, pageSize);
+            if (!bannedUsers.Any()) return NotFound("No banned users found.");
+
+            var result = new
+            {
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize,
+                BannedUsers = bannedUsers
+            };
+
+            return Ok(result);
+        }
+
     }
 }
