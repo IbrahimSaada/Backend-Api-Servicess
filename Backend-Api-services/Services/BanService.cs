@@ -86,7 +86,9 @@ public class BanService : IBanService
             {
                 UserId = b.user_id,
                 BanReason = b.ban_reason,
-                ExpiresAt = b.expires_at
+                ExpiresAt = b.expires_at,
+                FullName = b.users.fullname,
+                UserName = b.users.username
             });
 
         var totalCount = await query.CountAsync();
