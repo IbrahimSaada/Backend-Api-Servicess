@@ -177,18 +177,20 @@ namespace Backend_Api_services.Controllers
         // GET: api/Stories/user/{userId}
         // Pagination example: GET /api/Stories/user/12?pageIndex=1&pageSize=20
         [HttpGet("user/{userId}")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetStories(
             int userId,
             [FromQuery] int pageIndex = 1,
             [FromQuery] int pageSize = 20)
         {
-
+            /*
             // Validate signature
             var dataToSign = $"{userId}:{pageIndex}:{pageSize}";
             if (!ValidateRequestSignature(dataToSign))
             {
                 return Unauthorized("Invalid or missing signature.");
             }
+            */
 
 
             // Optional: check if the user exists
@@ -401,10 +403,25 @@ namespace Backend_Api_services.Controllers
                 return Forbid("You are not authorized to delete this story media.");
             }
 
+            // Remove the story media
             _context.StoriesMedia.Remove(storyMedia);
             await _context.SaveChangesAsync();
 
+            // Check if this was the last media for the story
+            var remainingMediaCount = await _context.StoriesMedia
+                .Where(sm => sm.story_id == storyMedia.story_id) // Check media for the same story
+                .CountAsync();
+
+            if (remainingMediaCount == 0)
+            {
+                // If no media left, set the story's is_active to false
+                story.isactive = false; // Assuming `is_active` is the field in the Stories table
+                _context.Stories.Update(story);
+                await _context.SaveChangesAsync();
+            }
+
             return Ok("Story media deleted successfully.");
         }
+
     }
 }
