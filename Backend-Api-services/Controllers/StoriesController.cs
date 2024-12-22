@@ -177,20 +177,18 @@ namespace Backend_Api_services.Controllers
         // GET: api/Stories/user/{userId}
         // Pagination example: GET /api/Stories/user/12?pageIndex=1&pageSize=20
         [HttpGet("user/{userId}")]
-        [AllowAnonymous]
         public async Task<IActionResult> GetStories(
             int userId,
             [FromQuery] int pageIndex = 1,
             [FromQuery] int pageSize = 20)
         {
-            /*
             // Validate signature
             var dataToSign = $"{userId}:{pageIndex}:{pageSize}";
             if (!ValidateRequestSignature(dataToSign))
             {
                 return Unauthorized("Invalid or missing signature.");
             }
-            */
+
 
             // Optional: check if the user exists
             bool userExists = await _context.users
