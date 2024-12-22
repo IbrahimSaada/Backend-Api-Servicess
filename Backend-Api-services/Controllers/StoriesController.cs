@@ -192,7 +192,6 @@ namespace Backend_Api_services.Controllers
             }
             */
 
-
             // Optional: check if the user exists
             bool userExists = await _context.users
                 .AsNoTracking()
@@ -200,12 +199,14 @@ namespace Backend_Api_services.Controllers
 
             if (!userExists) return NotFound("User not found");
 
-            // Fetch all active stories that have not expired
+            // Fetch all active stories that have not expired, 
+            // ordering them from the newest to the oldest based on createdat
             var activeStoriesQuery = _context.Stories
                 .AsNoTracking()
                 .Include(s => s.Media)
-                .Include(s => s.users)       // we need user info (fullname, profile_pic)
-                .Where(s => s.isactive && s.expiresat > DateTime.UtcNow);
+                .Include(s => s.users)  // For user info (fullname, profile_pic)
+                .Where(s => s.isactive && s.expiresat > DateTime.UtcNow)
+                .OrderByDescending(s => s.createdat);  // <-- ORDER STORIES BY createdat DESC
 
             // We'll do the blocking check in-memory if needed
             var allActiveStories = await activeStoriesQuery.ToListAsync();
@@ -225,8 +226,10 @@ namespace Backend_Api_services.Controllers
                 var (isBlocked, _) = await _blockService.IsBlockedAsync(userId, story.user_id);
                 if (isBlocked) continue;
 
+                // Filter media that hasn't expired, and order by createdat descending
                 var validMedia = story.Media
                     .Where(m => m.expiresat > DateTime.UtcNow)
+                    .OrderByDescending(m => m.createdat)    // <-- ORDER MEDIA BY createdat DESC
                     .Select(m => new StoriesMediaResponse
                     {
                         media_id = m.media_id,
@@ -255,9 +258,7 @@ namespace Backend_Api_services.Controllers
                 responseList.Add(storyResponse);
             }
 
-            // Now that we have the final filtered list, apply pagination in-memory.
-            // Alternatively, you can transform your approach to do more of this filtering in the DB,
-            // but with blocking checks, often we do it in memory.
+            // Apply pagination in-memory
             int totalCount = responseList.Count;
             var paginatedStories = responseList
                 .Skip((pageIndex - 1) * pageSize)
