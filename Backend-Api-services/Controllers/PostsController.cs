@@ -273,14 +273,32 @@ public class PostsController : ControllerBase
 
     // GET: api/Posts/{postId}/Comments
     [HttpGet("{postId}/Comments")]
-    public async Task<ActionResult<IEnumerable<CommentResponse>>> GetComments(int postId)
+    [AllowAnonymous]
+    public async Task<ActionResult<PaginatedCommentResponse>> GetComments(
+        int postId,
+        int pageNumber = 1,
+        int pageSize = 5)
     {
-        var comments = await _context.Comments
-                                      .Include(c => c.User)
-                                      .Where(c => c.post_id == postId && c.parent_comment_id == null)
-                                      .OrderByDescending(c => c.created_at)
-                                      .ToListAsync();
+        // 1) Basic validation for pagination parameters
+        if (pageNumber < 1) pageNumber = 1;
+        if (pageSize < 1) pageSize = 5;
 
+        // 2) Query all top-level comments for the given post
+        var commentsQuery = _context.Comments
+                                    .Include(c => c.User)
+                                    .Where(c => c.post_id == postId && c.parent_comment_id == null)
+                                    .OrderByDescending(c => c.created_at);
+
+        // 3) Count total records (before pagination)
+        var totalCount = await commentsQuery.CountAsync();
+
+        // 4) Apply pagination (Skip / Take)
+        var comments = await commentsQuery
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        // 5) Map those comments to DTOs (including nested replies, which are not paginated here)
         var commentResponses = comments.Select(c => new CommentResponse
         {
             commentid = c.comment_id,
@@ -293,7 +311,17 @@ public class PostsController : ControllerBase
             Replies = GetReplies(c.comment_id).ToList()
         }).ToList();
 
-        return Ok(commentResponses);
+        // 6) Create a PaginatedCommentResponse to include metadata (total count, pages, etc.)
+        var response = new PaginatedCommentResponse
+        {
+            Comments = commentResponses,
+            CurrentPage = pageNumber,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+            TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize),
+        };
+
+        return Ok(response);
     }
 
     private IEnumerable<CommentResponse> GetReplies(int parentCommentId)
