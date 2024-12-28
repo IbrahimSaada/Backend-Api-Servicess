@@ -20,5 +20,9 @@ namespace Backend_Api_services.Services.Interfaces
         Task HandleQuestionLikeNotificationAsync(int recipientUserId, int senderUserId, int questionId);
         Task HandleAnswerNotificationAsync(int recipientUserId, int senderUserId, int questionId, int answerId);
         Task HandleCommentNotificationAsync(int recipientUserId, int senderUserId, int postId, int commentId, string notificationType);
+        Task<int> GetUnreadCountAsync(int userId);
+        Task MarkAllAsReadAsync(int userId);
+        Task<bool> DeleteNotificationAsync(int notificationId, int userId);
+
     }
 }
