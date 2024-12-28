@@ -20,5 +20,9 @@ namespace Backend_Api_services.Services.Interfaces
         Task ***REMOVED***(int recipientUserId, int senderUserId, int ***REMOVED***);
         Task ***REMOVED***(int recipientUserId, int senderUserId, int ***REMOVED***, int ***REMOVED***);
         Task HandleCommentNotificationAsync(int recipientUserId, int senderUserId, int postId, int commentId, string notificationType);
+        Task<int> GetUnreadCountAsync(int userId);
+        Task MarkAllAsReadAsync(int userId);
+        Task<bool> DeleteNotificationAsync(int notificationId, int userId);
+
     }
 }
