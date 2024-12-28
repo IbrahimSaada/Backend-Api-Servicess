@@ -226,10 +226,12 @@ namespace Backend_Api_services.Services
                 // Update notification
                 existingNotification.message = message;
                 existingNotification.aggregated_user_ids = string.Join(",", userIds);
+                existingNotification.created_at = DateTime.UtcNow;
 
                 // Explicitly mark properties as modified
                 _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
                 _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
+                _context.Entry(existingNotification).Property(n => n.created_at).IsModified = true;
 
                 // Send push notification only if notifications are not muted
                 TimeSpan pushCooldown = TimeSpan.FromMinutes(5);
@@ -417,10 +419,12 @@ namespace Backend_Api_services.Services
                 // Update notification
                 existingNotification.message = message;
                 existingNotification.aggregated_user_ids = string.Join(",", userIds);
+                existingNotification.created_at = DateTime.UtcNow;
 
                 // Explicitly mark properties as modified
                 _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
                 _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
+                _context.Entry(existingNotification).Property(n => n.created_at).IsModified = true;
 
                 // Send push notification only if notifications are not muted
                 TimeSpan pushCooldown = TimeSpan.FromMinutes(5); // Adjust cooldown period as needed
@@ -561,10 +565,12 @@ namespace Backend_Api_services.Services
                 // Update notification
                 existingNotification.message = message;
                 existingNotification.aggregated_user_ids = string.Join(",", userIds);
+                existingNotification.created_at = DateTime.UtcNow;
 
                 // Explicitly mark properties as modified
                 _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
                 _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
+                _context.Entry(existingNotification).Property(n => n.created_at).IsModified = true;
 
                 // Send push notification only if notifications are not muted
                 TimeSpan pushCooldown = TimeSpan.FromMinutes(5); // Adjust cooldown period as needed
@@ -705,10 +711,12 @@ namespace Backend_Api_services.Services
                 // Update notification
                 existingNotification.message = message;
                 existingNotification.aggregated_user_ids = string.Join(",", userIds);
+                existingNotification.created_at = DateTime.UtcNow;
 
                 // Explicitly mark properties as modified
                 _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
                 _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
+                _context.Entry(existingNotification).Property(n => n.created_at).IsModified = true;
 
                 // Send push notification only if notifications are not muted
                 TimeSpan pushCooldown = TimeSpan.FromMinutes(5); // Adjust cooldown period as needed
@@ -850,10 +858,12 @@ namespace Backend_Api_services.Services
                 // Update notification
                 existingNotification.message = message;
                 existingNotification.aggregated_user_ids = string.Join(",", userIds);
+                existingNotification.created_at = DateTime.UtcNow;
 
                 // Explicitly mark properties as modified
                 _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
                 _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
+                _context.Entry(existingNotification).Property(n => n.created_at).IsModified = true;
 
                 // Send push notification only if notifications are not muted
                 TimeSpan pushCooldown = TimeSpan.FromMinutes(5); // Adjust cooldown period as needed
@@ -1049,10 +1059,12 @@ namespace Backend_Api_services.Services
                     existingNotification.message = message;
                     existingNotification.aggregated_user_ids = string.Join(",", userIds);
                     existingNotification.aggregated_***REMOVED***_ids = string.Join(",", ***REMOVED***s);
+                    existingNotification.created_at = DateTime.UtcNow;
 
                     _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
                     _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
                     _context.Entry(existingNotification).Property(n => n.aggregated_***REMOVED***_ids).IsModified = true;
+                    _context.Entry(existingNotification).Property(n => n.created_at).IsModified = true;
 
                     // Send push notification only if notifications are not muted
                     if (!isMuted &&
@@ -1244,10 +1256,12 @@ namespace Backend_Api_services.Services
                     existingNotification.message = message;
                     existingNotification.aggregated_user_ids = string.Join(",", userIds);
                     existingNotification.aggregated_comment_ids = string.Join(",", commentIds);
+                    existingNotification.created_at = DateTime.UtcNow;
 
                     _context.Entry(existingNotification).Property(n => n.message).IsModified = true;
                     _context.Entry(existingNotification).Property(n => n.aggregated_user_ids).IsModified = true;
                     _context.Entry(existingNotification).Property(n => n.aggregated_comment_ids).IsModified = true;
+                    _context.Entry(existingNotification).Property(n => n.created_at).IsModified = true;
 
                     // Send push notification only if notifications are not muted
                     if (!isMuted &&
@@ -1280,7 +1294,46 @@ namespace Backend_Api_services.Services
             }
         }
 
+        public async Task<int> GetUnreadCountAsync(int userId)
+        {
+            return await _context.notification
+                .Where(n => n.recipient_user_id == userId && !n.is_read)
+                .CountAsync();
+        }
 
+        public async Task MarkAllAsReadAsync(int userId)
+        {
+            var notifications = _context.notification
+                .Where(n => n.recipient_user_id == userId && !n.is_read);
+
+            // You can do this in one shot:
+            await notifications.ForEachAsync(n => n.is_read = true);
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task<bool> DeleteNotificationAsync(int notificationId, int userId)
+        {
+            // Attempt to find the notification by ID
+            var notification = await _context.notification.FindAsync(notificationId);
+            if (notification == null)
+            {
+                // Notification does not exist
+                return false;
+            }
+
+            // Ensure the caller is the recipient of the notification
+            if (notification.recipient_user_id != userId)
+            {
+                // The user is not authorized to delete this notification
+                return false;
+            }
+
+            // If all checks pass, remove the notification
+            _context.notification.Remove(notification);
+            await _context.SaveChangesAsync();
+
+            return true;
+        }
 
 
     }

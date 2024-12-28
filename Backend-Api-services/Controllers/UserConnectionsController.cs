@@ -171,7 +171,7 @@ public class UserConnectionsController : ControllerBase
 
 
     // DELETE: api/Users/unfollow
-    [HttpDelete("unfollow")]
+    [HttpPost("unfollow")]
     public async Task<ActionResult> UnfollowUser([FromBody] FollowUserDto followUserDto)
     {
         // Extract the signature from the request header

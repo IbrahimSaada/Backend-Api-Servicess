@@ -1,11 +1,13 @@
 ﻿using Backend_Api_services.Models.DTOs;
 using Backend_Api_services.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Backend_Api_services.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class NotificationController : ControllerBase
     {
         private readonly INotificationService _notificationService;
@@ -15,8 +17,6 @@ namespace Backend_Api_services.Controllers
             _notificationService = notificationService;
         }
 
-        // POST: api/notification/send
-        [HttpPost("send")]
         public async Task<IActionResult> SendNotification([FromBody] NotificationRequest request)
         {
             if (string.IsNullOrEmpty(request.Token) ||
@@ -53,5 +53,38 @@ namespace Backend_Api_services.Controllers
             await _notificationService.MarkAsReadAsync(notificationId);
             return NoContent();
         }
+
+        [HttpGet("unread-count/{userId}")]
+        public async Task<IActionResult> GetUnreadCount(int userId)
+        {
+            // Count the notifications where recipient_user_id = userId AND is_read = false
+            var unreadCount = await _notificationService.GetUnreadCountAsync(userId);
+            return Ok(new { UnreadCount = unreadCount });
+        }
+
+        // PUT: api/notification/mark-all-as-read/{userId}
+        [HttpPut("mark-all-as-read/{userId}")]
+        public async Task<IActionResult> MarkAllAsRead(int userId)
+        {
+            await _notificationService.MarkAllAsReadAsync(userId);
+            return NoContent();
+        }
+
+        [HttpPost("{notificationId}")]
+        public async Task<IActionResult> DeleteNotification(int notificationId, [FromQuery] int userId)
+        {
+            // Attempt to delete the notification
+            var success = await _notificationService.DeleteNotificationAsync(notificationId, userId);
+
+            if (!success)
+            {
+                // If deletion fails, either the notification didn't exist or the user was unauthorized
+                return Unauthorized("Unable to delete notification. You may not be the notification’s recipient.");
+            }
+
+            // Successfully deleted
+            return NoContent();
+        }
+
     }
 }
