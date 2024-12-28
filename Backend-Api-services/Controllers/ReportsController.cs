@@ -24,35 +24,6 @@ namespace Backend_Api_services.Controllers
             _signatureService = signatureService;
         }
 
-        // GET: api/Reports
-        [HttpGet]
-        [AllowAnonymous]  // Allow anonymous access to GET requests if needed
-        public async Task<ActionResult<IEnumerable<ReportRequest>>> GetReports()
-        {
-            var reports = await _context.Reports
-                .Include(r => r.ReportedBy)
-                .Include(r => r.ReportedUser)
-                .ToListAsync();
-
-            var reportDtos = reports.Select(report => new ReportRequest
-            {
-                ReportId = report.report_id,
-                ReportedBy = report.reported_by,
-                ReportedByUsername = report.ReportedBy.username,
-                ReportedUser = report.reported_user,
-                ReportedUserUsername = report.ReportedUser.username,
-                content_type = report.content_type,
-                ContentId = report.content_id,
-                ReportReason = report.report_reason,
-                ReportStatus = report.report_status,
-                SeverityLevel = report.severity_level,
-                CreatedAt = report.created_at,
-                ResolvedAt = report.resolved_at
-            }).ToList();
-
-            return Ok(reportDtos);
-        }
-
         // POST: api/Reports
         [HttpPost]
         public async Task<ActionResult<ReportResponse>> CreateReport([FromBody] ReportResponse reportDto)

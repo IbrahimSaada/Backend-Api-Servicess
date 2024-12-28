@@ -10,17 +10,25 @@ namespace Backend_Api_services.Controllers.Controller_Admin
     {
         private readonly IBanService _banService;
         private readonly SignatureService _signatureService;
-        public BanController(IBanService banService, SignatureService signatureService)
+        private readonly ILogger<BanController> _logger;
+        public BanController(IBanService banService, SignatureService signatureService, ILogger<BanController> logger)
         {
             _banService = banService;
             _signatureService = signatureService;
+            _logger = _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
         [HttpPost("BanUser")]
         public async Task<IActionResult> BanUser([FromBody] BanUserRequest request)
         {
             // Extract the signature from the request header
             var signature = Request.Headers["X-Signature"].FirstOrDefault();
-            var dataToSign = $"{request.UserId}|{request.BanReason}|{request.ExpiresAt}";
+
+            // Use ISO 8601 or round-trip "o" here
+            var dataToSign = $"{request.UserId}|{request.BanReason}|{request.ExpiresAt?.ToString("yyyy-MM-ddTHH:mm:ss.fff")}";
+
+
+            _logger.LogError("Backend Sig: " + signature);
+            _logger.LogError("Backend dataToSign: " + dataToSign);
 
             // Validate the signature
             if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
@@ -32,6 +40,7 @@ namespace Backend_Api_services.Controllers.Controller_Admin
             if (!success) return NotFound("User not found.");
             return Ok("User banned successfully.");
         }
+
 
         [HttpPost("UnbanUser/{userId}")]
         public async Task<IActionResult> UnbanUser(int userId)
