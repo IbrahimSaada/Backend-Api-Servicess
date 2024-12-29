@@ -137,6 +137,7 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IChatNotificationService, ChatNotificationService>();
 builder.Services.AddScoped<IBlockService, BlockService>();
 builder.Services.AddScoped<IBanService, BanService>();
+builder.Services.AddScoped<IChatPermissionService, ChatPermissionService>();
 
 var app = builder.Build();
 

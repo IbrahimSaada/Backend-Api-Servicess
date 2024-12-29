@@ -130,56 +130,84 @@ namespace Backend_Api_services.Controllers
                 return Unauthorized("Invalid or missing signature.");
             }
 
-            var followers = await _context.Followers
-                .Where(f => f.followed_user_id == userId && !f.is_dismissed)
-                .Select(f => new ViewContacsDto
-                {
-                    UserId = f.follower_user_id,
-                    Fullname = f.Follower.fullname,
-                    ProfilePicUrl = f.Follower.profile_pic,
-                })
-                .ToListAsync();
-
-            var following = await _context.Followers
-                .Where(f => f.follower_user_id == userId && !f.is_dismissed)
-                .Select(f => new ViewContacsDto
-                {
-                    UserId = f.followed_user_id,
-                    Fullname = f.User.fullname,
-                    ProfilePicUrl = f.User.profile_pic,
-                })
-                .ToListAsync();
-
-            var allContacts = followers
-                .Concat(following)
-                .GroupBy(c => c.UserId)
-                .Select(g => g.First())
-                .ToList();
-
-            if (!string.IsNullOrEmpty(search))
+            // If there's no search term, keep existing logic:
+            if (string.IsNullOrWhiteSpace(search))
             {
-                allContacts = allContacts
-                    .Where(c => c.Fullname.Contains(search, StringComparison.OrdinalIgnoreCase))
+                var followers = await _context.Followers
+                    .Where(f => f.followed_user_id == userId && !f.is_dismissed)
+                    .Select(f => new ViewContacsDto
+                    {
+                        UserId = f.follower_user_id,
+                        Fullname = f.Follower.fullname,
+                        ProfilePicUrl = f.Follower.profile_pic,
+                    })
+                    .ToListAsync();
+
+                var following = await _context.Followers
+                    .Where(f => f.follower_user_id == userId && !f.is_dismissed)
+                    .Select(f => new ViewContacsDto
+                    {
+                        UserId = f.followed_user_id,
+                        Fullname = f.User.fullname,
+                        ProfilePicUrl = f.User.profile_pic,
+                    })
+                    .ToListAsync();
+
+                // Union of followers & following
+                var allContacts = followers
+                    .Concat(following)
+                    .GroupBy(c => c.UserId)
+                    .Select(g => g.First())
                     .ToList();
+
+                // Paginate
+                var totalRecords = allContacts.Count;
+                var paginatedContacts = allContacts
+                    .Skip((pageNumber - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+
+                return Ok(new
+                {
+                    TotalRecords = totalRecords,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize,
+                    Contacts = paginatedContacts
+                });
             }
-
-            var totalRecords = allContacts.Count;
-
-            var paginatedContacts = allContacts
-                .Skip((pageNumber - 1) * pageSize)
-                .Take(pageSize)
-                .ToList();
-
-            return Ok(new
+            else
             {
-                TotalRecords = totalRecords,
-                PageNumber = pageNumber,
-                PageSize = pageSize,
-                Contacts = paginatedContacts
-            });
+                // If search term is provided, search across ALL users except the current user
+                var query = _context.users
+                    .Where(u => u.user_id != userId &&
+                                EF.Functions.Like(u.fullname, $"%{search}%"));
+
+                var totalRecords = await query.CountAsync();
+
+                // Implement pagination
+                var users = await query
+                    .OrderBy(u => u.fullname)
+                    .Skip((pageNumber - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(u => new ViewContacsDto
+                    {
+                        UserId = u.user_id,
+                        Fullname = u.fullname,
+                        ProfilePicUrl = u.profile_pic
+                    })
+                    .ToListAsync();
+
+                return Ok(new
+                {
+                    TotalRecords = totalRecords,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize,
+                    Contacts = users
+                });
+            }
         }
 
-        // Soft delete a chat
+        // Soft delete a chat (and if both users have deleted it, remove it entirely)
         [HttpPost("delete-chat")]
         public async Task<IActionResult> DeleteChat([FromBody] DeleteChatDto dto)
         {
@@ -192,7 +220,7 @@ namespace Backend_Api_services.Controllers
                 return Unauthorized("Invalid or missing signature.");
             }
 
-            // Fetch the chat
+            // 2. Fetch the chat
             var chat = await _context.Chats.FindAsync(dto.ChatId);
 
             if (chat == null)
@@ -200,17 +228,19 @@ namespace Backend_Api_services.Controllers
                 return NotFound("Chat not found.");
             }
 
-            // Identify the other user in the chat
-            int otherUserId = chat.user_initiator == dto.UserId ? chat.user_recipient : chat.user_initiator;
+            // 3. Identify the other user in the chat
+            int otherUserId = chat.user_initiator == dto.UserId
+                ? chat.user_recipient
+                : chat.user_initiator;
 
-            // Check if the user is blocked by or has blocked the other user
+            // 4. Check if blocked
             var (isBlocked, blockReason) = await _blockService.IsBlockedAsync(dto.UserId, otherUserId);
             if (isBlocked)
             {
                 return StatusCode(403, $"Action not allowed: {blockReason}");
             }
 
-            // Perform soft delete based on the user's role in the chat
+            // 5. Perform soft delete based on the user's role in the chat
             if (chat.user_initiator == dto.UserId)
             {
                 chat.is_deleted_by_initiator = true;
@@ -226,7 +256,25 @@ namespace Backend_Api_services.Controllers
                 return BadRequest("User is not part of this chat.");
             }
 
+            // 6. If both users have deleted the chat, remove it permanently
+            if (chat.is_deleted_by_initiator && chat.is_deleted_by_recipient)
+            {
+                // We can remove any messages, media, etc. associated with the chat
+                var messages = _context.Messages
+                    .Where(m => m.chat_id == chat.chat_id);
+
+                _context.Messages.RemoveRange(messages);
+                _context.Chats.Remove(chat);
+
+                // Optionally remove Chat_Media rows or handle them as needed if you store them
+                // For example:
+                // var mediaItems = _context.ChatMedia.Where(cm => messages.Select(m => m.message_id).Contains(cm.message_id));
+                // _context.ChatMedia.RemoveRange(mediaItems);
+            }
+
+            // 7. Save changes
             await _context.SaveChangesAsync();
+
             return Ok("Chat deleted successfully.");
         }
 
