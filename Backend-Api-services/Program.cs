@@ -125,6 +125,7 @@ builder.Services.AddSingleton<MessagesEmail>(); // For messages-specific email s
 
 // Register the StoryExpirationService background service
 builder.Services.AddHostedService<StoryExpirationService>();
+builder.Services.AddHostedService<BanExpirationService>();
 
 builder.Services.AddScoped<SignatureService>();
 builder.Services.AddTransient<IQRCodeService, QRCodeService>();
