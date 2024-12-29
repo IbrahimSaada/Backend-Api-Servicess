@@ -80,5 +80,36 @@ namespace Backend_Api_services.Controllers.Controller_Admin
             return Ok(unresolvedCount);
         }
 
+        [HttpPost("ResolveReport/{reportId}")]
+        public async Task<ActionResult> ResolveReport(int reportId)
+        {
+            // Validate the reportId
+            if (reportId <= 0)
+                return BadRequest("Invalid report ID.");
+
+            // Fetch the report from the database
+            var report = await _context.Reports.FindAsync(reportId);
+
+            if (report == null)
+                return NotFound($"No report found with ID {reportId}.");
+
+            if (report.report_status == "Resolved")
+                return BadRequest("The report is already resolved.");
+
+            // Update the report status and resolved timestamp
+            report.report_status = "Resolved";
+            report.resolved_at = DateTime.UtcNow;
+
+            // Save changes to the database
+            try
+            {
+                await _context.SaveChangesAsync();
+                return Ok(new { message = "Report resolved successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error occurred while resolving the report: {ex.Message}");
+            }
+        }
     }
 }
