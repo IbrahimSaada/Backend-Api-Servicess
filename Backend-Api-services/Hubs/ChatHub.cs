@@ -16,6 +16,7 @@ using Backend_Api_services.Services.Interfaces;
 namespace Backend_Api_services.Hubs
 {
     [Authorize] // Require authentication to access the hub
+    [CheckBan]
     public class ChatHub : Hub
     {
         // Thread-safe dictionary to map user IDs to connection IDs
