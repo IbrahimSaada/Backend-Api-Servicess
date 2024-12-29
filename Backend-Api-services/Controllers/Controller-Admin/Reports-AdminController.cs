@@ -1,5 +1,7 @@
 ﻿using Backend_Api_services.Models.Data;
 using Backend_Api_services.Models.DTOs;
+using Backend_Api_services.Models.DTOs.feedDto;
+using Backend_Api_services.Models.DTOs.questionDto;
 using Backend_Api_services.Models.Entities;
 using Backend_Api_services.Services;
 using Microsoft.AspNetCore.Authorization;
