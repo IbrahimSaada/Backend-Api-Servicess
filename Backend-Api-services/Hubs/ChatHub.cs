@@ -25,13 +25,15 @@ namespace Backend_Api_services.Hubs
         private readonly SignatureService _signatureService;
         private readonly IChatNotificationService _chatNotificationService;
         private readonly IBlockService _blockService;
+        private readonly IChatPermissionService _chatPermissionService;
 
-        public ChatHub(apiDbContext context, SignatureService signatureService, IChatNotificationService chatNotificationService, IBlockService blockService)
+        public ChatHub(apiDbContext context, SignatureService signatureService, IChatNotificationService chatNotificationService, IBlockService blockService, IChatPermissionService chatPermissionService)
         {
             _context = context;
             _signatureService = signatureService;
             _chatNotificationService = chatNotificationService;
             _blockService = blockService;
+            _chatPermissionService = chatPermissionService;
         }
 
         // Method called when a user connects
@@ -160,11 +162,17 @@ namespace Backend_Api_services.Hubs
         }
 
         // Method to send a message to a specific user
-        public async Task SendMessage(int recipientUserId, string messageContent, string messageType, List<MediaItemDto> mediaItems, string signature)
+        public async Task SendMessage(
+            int recipientUserId,
+            string messageContent,
+            string messageType,
+            List<MediaItemDto> mediaItems,
+            string signature
+        )
         {
             int senderId = int.Parse(Context.UserIdentifier);
 
-            // Validate signature
+            // 1. Validate signature
             var dataToSign = $"{senderId}:{recipientUserId}:{messageContent}";
             if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
             {
@@ -172,22 +180,19 @@ namespace Backend_Api_services.Hubs
                 return;
             }
 
-            // Check if the sender is allowed to chat with the recipient
-            var followedUser = await _context.Followers
-                .FirstOrDefaultAsync(f => f.followed_user_id == recipientUserId
-                                           && f.follower_user_id == senderId
-                                           && f.approval_status == "approved");
-
-            if (followedUser == null)
+            // 2. Check permission
+            var permissionResult = await _chatPermissionService.CheckChatPermission(senderId, recipientUserId);
+            if (permissionResult.Permission != ChatPermission.Allowed)
             {
-                await Clients.Caller.SendAsync("Error", "You cannot chat with this user until they approve your follow request.");
+                await Clients.Caller.SendAsync("Error", permissionResult.Reason);
                 return;
             }
 
-            // Find or create the chat
+            // 3. Find or create chat
             var chat = await _context.Chats.FirstOrDefaultAsync(c =>
                 (c.user_initiator == senderId && c.user_recipient == recipientUserId) ||
-                (c.user_initiator == recipientUserId && c.user_recipient == senderId));
+                (c.user_initiator == recipientUserId && c.user_recipient == senderId)
+            );
 
             if (chat == null)
             {
@@ -198,9 +203,11 @@ namespace Backend_Api_services.Hubs
                     created_at = DateTime.UtcNow
                 };
                 _context.Chats.Add(chat);
+                await _context.SaveChangesAsync();
             }
             else
             {
+                // if it was soft-deleted, restore it
                 if (chat.user_initiator == recipientUserId && chat.is_deleted_by_initiator)
                 {
                     chat.is_deleted_by_initiator = false;
@@ -209,13 +216,13 @@ namespace Backend_Api_services.Hubs
                 {
                     chat.is_deleted_by_recipient = false;
                 }
-
                 _context.Entry(chat).Property(c => c.deleted_at_initiator).IsModified = false;
                 _context.Entry(chat).Property(c => c.deleted_at_recipient).IsModified = false;
             }
 
             await _context.SaveChangesAsync();
 
+            // 4. Create the message
             var message = new Messages
             {
                 chat_id = chat.chat_id,
@@ -224,10 +231,10 @@ namespace Backend_Api_services.Hubs
                 message_content = messageContent,
                 created_at = DateTime.UtcNow
             };
-
             _context.Messages.Add(message);
             await _context.SaveChangesAsync();
 
+            // optional: attach media items
             if (mediaItems != null && mediaItems.Any())
             {
                 foreach (var mediaItem in mediaItems)
@@ -243,6 +250,7 @@ namespace Backend_Api_services.Hubs
                 await _context.SaveChangesAsync();
             }
 
+            // 5. Broadcast
             var messageDto = new MessageDto
             {
                 MessageId = message.message_id,
@@ -328,7 +336,7 @@ namespace Backend_Api_services.Hubs
         {
             int initiatorUserId = int.Parse(Context.UserIdentifier);
 
-            // Validate signature
+            // 1. Validate signature
             var dataToSign = $"{initiatorUserId}:{recipientUserId}";
             if (string.IsNullOrEmpty(signature) || !_signatureService.ValidateSignature(signature, dataToSign))
             {
@@ -336,35 +344,16 @@ namespace Backend_Api_services.Hubs
                 return;
             }
 
-            var recipientUser = await _context.users.FindAsync(recipientUserId);
-            if (recipientUser == null)
+            // 2. Check permission
+            var permissionResult = await _chatPermissionService.CheckChatPermission(initiatorUserId, recipientUserId);
+            if (permissionResult.Permission == ChatPermission.NotAllowed ||
+                permissionResult.Permission == ChatPermission.MustMutualFollow)
             {
-                await Clients.Caller.SendAsync("Error", "Recipient user not found.");
+                await Clients.Caller.SendAsync("Error", permissionResult.Reason);
                 return;
             }
 
-            // Check if the user is blocked
-            var (isBlocked, blockReason) = await _blockService.IsBlockedAsync(initiatorUserId, recipientUserId);
-            if (isBlocked)
-            {
-                await Clients.Caller.SendAsync("Error", $"Action not allowed: {blockReason}");
-                return;
-            }
-
-            if (!recipientUser.is_public)
-            {
-                var followRelationship = await _context.Followers
-                    .FirstOrDefaultAsync(f =>
-                        (f.followed_user_id == recipientUserId && f.follower_user_id == initiatorUserId && f.approval_status == "approved") ||
-                        (f.followed_user_id == initiatorUserId && f.follower_user_id == recipientUserId && f.approval_status == "approved"));
-
-                if (followRelationship == null)
-                {
-                    await Clients.Caller.SendAsync("Error", "You cannot chat with this user until they approve your follow request or you approve theirs.");
-                    return;
-                }
-            }
-
+            // 3. Check if a chat already exists
             var existingChat = await _context.Chats
                 .FirstOrDefaultAsync(c =>
                     (c.user_initiator == initiatorUserId && c.user_recipient == recipientUserId) ||
@@ -373,14 +362,13 @@ namespace Backend_Api_services.Hubs
 
             if (existingChat != null)
             {
+                // Possibly restore if it's soft-deleted
                 bool restored = false;
-
                 if (existingChat.user_initiator == initiatorUserId && existingChat.is_deleted_by_initiator)
                 {
                     existingChat.is_deleted_by_initiator = false;
                     restored = true;
                 }
-
                 if (existingChat.user_recipient == initiatorUserId && existingChat.is_deleted_by_recipient)
                 {
                     existingChat.is_deleted_by_recipient = false;
@@ -399,14 +387,15 @@ namespace Backend_Api_services.Hubs
                         CreatedAt = existingChat.created_at
                     };
 
-                    if (_connections.TryGetValue(recipientUserId, out var recipientConnections))
+                    // notify frontends
+                    if (_connections.TryGetValue(recipientUserId, out var recConns))
                     {
-                        await Clients.Clients(recipientConnections).SendAsync("ChatRestored", chatDto);
+                        await Clients.Clients(recConns).SendAsync("ChatRestored", chatDto);
                     }
 
-                    if (_connections.TryGetValue(initiatorUserId, out var initiatorConnections))
+                    if (_connections.TryGetValue(initiatorUserId, out var initConns))
                     {
-                        await Clients.Clients(initiatorConnections).SendAsync("ChatCreated", chatDto);
+                        await Clients.Clients(initConns).SendAsync("ChatCreated", chatDto);
                     }
 
                     return;
@@ -418,6 +407,7 @@ namespace Backend_Api_services.Hubs
                 }
             }
 
+            // 4. Create new chat
             var chat = new Chat
             {
                 user_initiator = initiatorUserId,
@@ -436,6 +426,7 @@ namespace Backend_Api_services.Hubs
                 CreatedAt = chat.created_at
             };
 
+            // notify frontends
             if (_connections.TryGetValue(recipientUserId, out var recipientConns))
             {
                 await Clients.Clients(recipientConns).SendAsync("NewChatNotification", newChatDto);
