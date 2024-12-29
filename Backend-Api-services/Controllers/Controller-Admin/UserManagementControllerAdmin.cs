@@ -138,49 +138,50 @@ public class UserManagementControllerAdmin : ControllerBase
 
         return Ok("User deleted successfully.");
     }
-    [HttpGet("usercount")]
+  
+    [HttpGet("CountVerifiedUsers")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetAllUsersWithCount([FromQuery] UserFilterDTO filter)
+    public async Task<IActionResult> CountVerifiedUsers()
     {
-        IQueryable<Users> query = _context.users;
+        // Count users where 'verified_at' is not null (i.e., verified users)
+        var verifiedUserCount = await _context.users
+            .Where(u => u.verified_at != null)
+            .CountAsync();
 
-        // Apply filters if provided
-        if (filter.StartDate.HasValue && filter.EndDate.HasValue)
+        return Ok(new
         {
-            query = query.Where(u => u.verified_at >= filter.StartDate && u.verified_at <= filter.EndDate);
+            VerifiedUserCount = verifiedUserCount
+        });
+    }
+    [HttpGet("CountVerifiedUsersByDate")]
+    [AllowAnonymous]
+    public async Task<IActionResult> CountVerifiedUsersByDate(DateTime? startDate, DateTime? endDate)
+    {
+        // Validate the date range
+        if (startDate == null || endDate == null || startDate > endDate)
+        {
+            return BadRequest(new { Message = "Invalid date range. Please provide valid start and end dates." });
         }
 
-        // Get total count
-        var totalCount = await query.CountAsync();
-
-        // Get all users without pagination
-        var users = await query
-            .Select(u => new UserManagementDTO
+        // Fetch and group verified users count by date
+        var verifiedUsersByDate = await _context.users
+            .Where(u => u.verified_at != null && u.verified_at >= startDate && u.verified_at <= endDate)
+            .GroupBy(u => u.verified_at.Value.Date)
+            .Select(g => new
             {
-                UserId = u.user_id,
-                Username = u.username,
-                Email = u.email,
-                ProfilePic = u.profile_pic,
-                Bio = u.bio,
-                Rating = u.rating,
-                PhoneNumber = u.phone_number,
-                VerifiedAt = u.verified_at,
-                Dob = u.dob,
-                Gender = u.gender,
-                Fullname = u.fullname
+                Date = g.Key,
+                VerifiedUserCount = g.Count()
             })
+            .OrderBy(g => g.Date)
             .ToListAsync();
 
-        // Return metadata and data
-        var result = new
+        return Ok(new
         {
-            Metadata = new
-            {
-                TotalCount = totalCount
-            },
-            Data = users
-        };
-
-        return Ok(result);
+            StartDate = startDate,
+            EndDate = endDate,
+            VerifiedUsersByDate = verifiedUsersByDate
+        });
     }
+
+
 }
