@@ -93,7 +93,8 @@ public class RegistrationController : ControllerBase
             password = BCrypt.Net.BCrypt.HashPassword(userDto.password),
             fullname = userDto.fullname,
             dob = DateTime.SpecifyKind(userDto.dob, DateTimeKind.Utc),
-            gender = userDto.gender
+            gender = userDto.gender,
+            profile_pic = "https://homepagecooking.s3.eu-central-1.amazonaws.com/users/default.png"
         };
 
         user.verification_code = GenerateVerificationCode();
