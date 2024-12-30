@@ -1,5 +1,4 @@
-﻿using Backend_Api_services;
-using Backend_Api_services.Models.Data;
+﻿using Backend_Api_services.Models.Data;
 using Backend_Api_services.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,14 +15,14 @@ public class messagesController : ControllerBase
 {
     private readonly apiDbContext _context;
     private readonly ILogger<messagesController> _logger;
-    private readonly MessagesEmail _messagesEmail;  // Update here to match DI registration
+    private readonly MessagesEmail _messagesEmail;
     private readonly IFileService _fileService;
 
     public messagesController(apiDbContext context, ILogger<messagesController> logger, MessagesEmail messagesEmail, IFileService fileService)
     {
         _context = context;
         _logger = logger;
-        _messagesEmail = messagesEmail; // Corrected to MessagesEmail
+        _messagesEmail = messagesEmail;
         _fileService = fileService;
     }
 
@@ -32,7 +31,6 @@ public class messagesController : ControllerBase
     {
         _logger.LogInformation("Starting to send email to all users");
 
-        // Validate input
         if (string.IsNullOrEmpty(request.Subject) || string.IsNullOrEmpty(request.Body))
         {
             return BadRequest("Subject and body are required.");
@@ -44,44 +42,43 @@ public class messagesController : ControllerBase
             return NotFound("No users found.");
         }
 
-        // Process attachments if available
         List<string> attachmentUrls = new List<string>();
-        if (request.Attachments != null && request.Attachments.Count > 0)
+        if (request.Attachments != null)
         {
             foreach (var attachment in request.Attachments)
             {
-                if (attachment.Length > 0)
-                {
-                    var fileUrl = await UploadAttachment(attachment);
-                    attachmentUrls.Add(fileUrl);
-                }
+                var fileUrl = await UploadAttachment(attachment);
+                attachmentUrls.Add(fileUrl);
             }
         }
 
-        // Send email to each user
         foreach (var user in users)
         {
-            await _messagesEmail.SendEmailAsync(user.email, request.Subject, request.Body, attachmentUrls);
+            await _messagesEmail.SendEmailAsync(
+                user.email,
+                request.Subject,
+                "./Templates/EmailTemplate.html",
+                new Dictionary<string, string>
+                {
+                    { "BODY", request.Body },
+                    { "SUBJECT", request.Subject }
+                },
+                attachmentPaths: attachmentUrls
+            );
         }
 
-        _logger.LogInformation("Email sent to all users successfully.");
-
-        return Ok("Email sent to all users.");
+        return Ok("Emails sent successfully.");
     }
 
     private async Task<string> UploadAttachment(IFormFile attachment)
     {
-        string bucketName = "homepagecooking";
-        string attachmentFolder = "attachments";
-
-        // Upload the file to S3 using the IFileService
-        return await _fileService.UploadFileAsync(attachment, bucketName, attachmentFolder);
+        return await _fileService.UploadFileAsync(attachment, "homepagecooking", "attachments");
     }
 
     public class EmailRequestModel
     {
         public string? Subject { get; set; }
         public string? Body { get; set; }
-        public List<IFormFile>? Attachments { get; set; } // List of files to be attached
+        public List<IFormFile>? Attachments { get; set; }
     }
 }
