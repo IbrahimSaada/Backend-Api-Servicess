@@ -10,7 +10,9 @@ namespace Backend_Api_services.Services.RatingService
     public class RatingService
     {
         private readonly apiDbContext _context;
-        private const int MaxPoints = 100; // Maximum points for 5 stars
+
+        // Increase MaxPoints from 100 to 200 (or more) so it's harder to reach 5 stars
+        private const int MaxPoints = 200;
 
         public RatingService(apiDbContext context)
         {
@@ -33,7 +35,8 @@ namespace Backend_Api_services.Services.RatingService
             var user = await _context.users.FindAsync(userId);
             if (user != null)
             {
-                user.rating = Math.Round(starRating * 2) / 2; // Round to nearest 0.5
+                // Round rating to nearest 0.5
+                user.rating = Math.Round(starRating * 2) / 2;
 
                 // Mark only the 'rating' property as modified
                 _context.Entry(user).Property(u => u.rating).IsModified = true;
@@ -44,7 +47,7 @@ namespace Backend_Api_services.Services.RatingService
 
         private async Task<int> CalculateTotalPoints(int userId)
         {
-            // Retrieve all verified ***REMOVED***s by the user
+            // Retrieve all verified ***REMOVED***s by this user
             var verified***REMOVED***s = await _context.***REMOVED***s
                 .Include(a => a.***REMOVED***s)
                 .Where(a => a.user_id == userId && a.is_verified)
@@ -52,13 +55,19 @@ namespace Backend_Api_services.Services.RatingService
 
             int totalPoints = 0;
 
-            // Calculate points based on ***REMOVED*** type
+            // Adjust the points logic (public vs. private)
             foreach (var ***REMOVED*** in verified***REMOVED***s)
             {
                 if (***REMOVED***.***REMOVED***s.is_private)
-                    totalPoints += 20; // Private ***REMOVED***
+                {
+                    // Private ***REMOVED*** verified => 4 points
+                    totalPoints += 4;
+                }
                 else
-                    totalPoints += 10; // Public ***REMOVED***
+                {
+                    // Public ***REMOVED*** verified => 2 points
+                    totalPoints += 2;
+                }
             }
 
             return totalPoints;
