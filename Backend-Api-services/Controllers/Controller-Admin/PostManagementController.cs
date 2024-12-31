@@ -89,5 +89,23 @@ namespace Backend_Api_services.Controllers
             // Return the list of posts with metadata
             return Ok(new { metadata, data = postResponses });
         }
+        //delete post
+
+        [HttpDelete("delete-post/{postId}")]
+        public async Task<IActionResult> DeletePost(int postId)
+        {
+            // Fetch the post by postId
+            var post = await _context.Posts.FirstOrDefaultAsync(p => p.post_id == postId);
+            if (post == null)
+            {
+                return NotFound("Post not found.");
+            }
+
+            // Remove the post
+            _context.Posts.Remove(post);
+            await _context.SaveChangesAsync();
+
+            return Ok("Post deleted successfully.");
+        }
     }
 }
