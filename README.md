@@ -12,8 +12,15 @@ This backend serves as the core API layer for a social media platform where user
 - **Bookmark Favorite Content** for later access.  
 - **Receive Notifications** for updates and interactions.  
 - **Manage User Profiles** with secure authentication.  
+- **Real-Time Chat** between users.  
+- **Like, Share, and Comment** on posts.  
+- **Stories and Story Viewing** features.
 
 The backend is hosted and managed using **AWS Elastic Beanstalk** and integrates **AWS services (EC2, RDS, S3, Lambda)** along with **Google Firebase** for **push notifications**.
+
+### 📢 **Public and Private Features**
+- **Public Features:** Available for all users, including sharing posts, real-time chats, commenting, liking, and story interactions.
+- **Private Features:** Additional functionalities will be available when the app is officially published on the **Google Play Store** and **Apple App Store**.
 
 ---
 
@@ -119,7 +126,7 @@ dotnet restore
 dotnet run
 ```
 
-Access the local API at `https://localhost:7002`.
+Access the local API at `https://localhost:5001`.
 
 ### 5️⃣ **Deploy to AWS Elastic Beanstalk**
 1. Configure the AWS CLI:
@@ -150,6 +157,7 @@ eb create Backend-Api-Env
 | `/api/notifications`     | GET    | Get notifications     |
 etc..........................................................
 
+---
 
 ## 📄 **License**
 
@@ -159,4 +167,5 @@ This project is licensed under the **MIT License**.
 
 ## 📬 **Contact & Support**
 
-- **Email:** ibrahimsaada99@gmail.com - ahmadghosen20@gmail.com
+- **Email:** ibrahimsaada99@gmail.com ahmadghosen20@gmail.com
+
