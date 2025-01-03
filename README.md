@@ -77,7 +77,7 @@ The backend is hosted and managed using **AWS Elastic Beanstalk** and integrates
 
 ### 1️⃣ **Clone the Repository**
 ```bash
-git clone https://github.com/<your-repo>/Backend-Api-services.git
+git clone https://github.com/IbrahimSaada/Backend-Api-Servicess.git
 cd Backend-Api-services
 ```
 
@@ -119,7 +119,7 @@ dotnet restore
 dotnet run
 ```
 
-Access the local API at `https://localhost:5001`.
+Access the local API at `https://localhost:7002`.
 
 ### 5️⃣ **Deploy to AWS Elastic Beanstalk**
 1. Configure the AWS CLI:
