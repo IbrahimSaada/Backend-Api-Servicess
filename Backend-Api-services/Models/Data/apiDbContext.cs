@@ -51,11 +51,6 @@ namespace Backend_Api_services.Models.Data
         public DbSet<Chat_Media> ChatMedia { get; set; }
         public DbSet<Messages> Messages { get; set; }
         public DbSet<Online_Status> OnlineStatus { get; set; }
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
-***REMOVED***
         public DbSet<Notification> notification { get; set; }
         public DbSet<muted_users> muted_users { get; set; }
         public DbSet<BlockedUsers> blocked_users { get; set; }
